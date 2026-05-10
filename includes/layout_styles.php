@@ -218,4 +218,74 @@
     }
     .auth-switch a { color: var(--focus); text-decoration: none; font-weight: 600; }
     .auth-switch a:hover { text-decoration: underline; }
+
+    .master-services-field { margin-top: 14px; }
+    .master-services-field > .field-label {
+        display: block;
+        font-size: 0.8rem;
+        font-weight: 600;
+        color: var(--muted);
+        margin-bottom: 6px;
+    }
+    .master-mechanic-chooses {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        padding: 12px 14px;
+        margin-bottom: 0;
+        background: var(--paper);
+        border: 1px solid var(--border);
+        border-radius: 4px 4px 0 0;
+        border-bottom: none;
+        font-size: 0.9rem;
+        line-height: 1.35;
+    }
+    .master-mechanic-chooses input { margin-top: 3px; width: 18px; height: 18px; flex-shrink: 0; }
+    .master-mechanic-chooses span strong { color: var(--text); }
+    .master-services-box {
+        max-height: 260px;
+        overflow-y: auto;
+        border: 1px solid var(--border);
+        border-radius: 0 0 4px 4px;
+        background: #fafafa;
+    }
+    .master-services-box.is-disabled {
+        opacity: 0.55;
+        pointer-events: none;
+    }
+    .master-service-row {
+        display: grid;
+        grid-template-columns: 22px minmax(0, 1fr) 88px;
+        gap: 10px 14px;
+        align-items: center;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.9rem;
+    }
+    .master-service-row:last-child { border-bottom: none; }
+    .master-service-row input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        margin: 0;
+        justify-self: start;
+    }
+    .master-service-name { min-width: 0; word-break: break-word; }
+    .master-service-qty { justify-self: end; }
+    .master-service-qty input {
+        width: 100%;
+        max-width: 80px;
+        padding: 8px 10px;
+        margin: 0;
+        text-align: center;
+    }
+    @media (max-width: 520px) {
+        .master-service-row {
+            grid-template-columns: 22px 1fr;
+            grid-template-rows: auto auto;
+        }
+        .master-service-qty {
+            grid-column: 2;
+            justify-self: start;
+        }
+    }
 </style>

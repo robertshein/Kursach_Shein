@@ -13,6 +13,7 @@ require_once __DIR__ . '/models/User.php';
 $user = $_SESSION['user'];
 $role = $user['role'] ?? '';
 $is_client = $role === User::ROLE_CLIENT;
+$is_master = $role === User::ROLE_MASTER;
 
 $cars = [];
 $orders = [];
@@ -108,6 +109,12 @@ $nav_home_href = 'index.php';
 $nav_cabinet_href = 'pages/cabinet.php';
 $nav_logout_href = 'pages/authorization.php?logout=1';
 $nav_show_cabinet = $is_client;
+$nav_show_master = $is_master;
+$nav_master_section = '';
+$nav_master_index_href = 'pages/master/index.php';
+$nav_master_new_href = 'pages/master/new_orders.php';
+$nav_master_orders_href = 'pages/master/orders.php';
+$nav_master_purchases_href = 'pages/master/purchase_requests.php';
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -203,6 +210,13 @@ $nav_show_cabinet = $is_client;
                     </form>
                 </section>
             </div>
+        <?php elseif ($is_master): ?>
+            <p class="lead">
+                Вы вошли как мастер. Назначайте механиков на новые заявки, смотрите все заявки и оформляйте запросы на закупку запчастей.
+            </p>
+            <p class="sans" style="margin-top: 0;">
+                <a class="btn-submit" href="pages/master/index.php" style="display: inline-block; text-decoration: none;">Открыть панель мастера</a>
+            </p>
         <?php else: ?>
             <p class="staff lead">
                 Вы вошли с ролью <strong><?php echo htmlspecialchars($role); ?></strong>.
