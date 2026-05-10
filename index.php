@@ -4,42 +4,50 @@ if (session_status() !== PHP_SESSION_ACTIVE) {
 }
 
 if (empty($_SESSION['user'])) {
-    header("Location: pages/authorization.php");
+    header('Location: pages/authorization.php');
     exit();
 }
+
+require_once __DIR__ . '/models/User.php';
+
+$user = $_SESSION['user'];
+$role = $user['role'] ?? '';
+$is_client = $role === User::ROLE_CLIENT;
+
+$nav_active = 'home';
+$nav_home_href = 'index.php';
+$nav_cabinet_href = 'pages/cabinet.php';
+$nav_logout_href = 'pages/authorization.php?logout=1';
+$nav_show_cabinet = $is_client;
 ?>
 <!DOCTYPE html>
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Главная</title>
-    <style>
-        body {
-            margin: 0;
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-family: "Segoe UI", Arial, sans-serif;
-            background: #0f172a;
-            color: #e2e8f0;
-        }
-        .box {
-            text-align: center;
-            max-width: 620px;
-            background: rgba(255, 255, 255, 0.04);
-            border: 1px solid rgba(148, 163, 184, 0.25);
-            border-radius: 14px;
-            padding: 24px;
-        }
-        a { color: #93c5fd; }
-    </style>
+    <title>АвтоПлюс</title>
+    <?php include __DIR__ . '/includes/layout_styles.php'; ?>
 </head>
 <body>
-    <div class="box">
-        <h1>Главная страница</h1>
-        <a href="pages/authorization.php?logout=1">Выйти</a>
+    <?php include __DIR__ . '/includes/site_nav.php'; ?>
+
+    <div class="page">
+        <h1 class="sans">Главная</h1>
+
+        <?php if ($is_client): ?>
+            <p class="lead">
+                Вы вошли в систему автосервиса <strong>АвтоПлюс</strong>.
+                Чтобы изменить профиль, добавить автомобиль или подать заявку на ремонт, перейдите в личный кабинет.
+            </p>
+            <p class="sans" style="margin-top: 0;">
+                <a class="btn-submit" href="<?php echo htmlspecialchars($nav_cabinet_href); ?>" style="display: inline-block; text-decoration: none;">Открыть личный кабинет</a>
+            </p>
+        <?php else: ?>
+            <p class="staff lead">
+                Вы вошли с ролью <strong><?php echo htmlspecialchars($role); ?></strong>.
+                Интерфейс для вашей роли на главной будет расширен позже.
+            </p>
+        <?php endif; ?>
     </div>
 </body>
 </html>
