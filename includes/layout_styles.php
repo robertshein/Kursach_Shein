@@ -204,4 +204,18 @@
     .car-sub { font-size: 0.85rem; color: var(--muted); margin-top: 4px; }
     .staff { color: var(--muted); }
     .staff code { font-size: 0.85em; background: #eceff1; padding: 2px 6px; border-radius: 3px; }
+
+    .page-auth { max-width: 520px; }
+    .auth-card > h1.sans { margin: 0 0 4px; }
+    .auth-card .lead { margin: 0 0 18px; }
+    .auth-card .btn-submit { width: 100%; margin-top: 8px; }
+    .auth-switch {
+        font-family: "Segoe UI", system-ui, sans-serif;
+        text-align: center;
+        margin: 16px 0 0;
+        font-size: 0.9rem;
+        color: var(--muted);
+    }
+    .auth-switch a { color: var(--focus); text-decoration: none; font-weight: 600; }
+    .auth-switch a:hover { text-decoration: underline; }
 </style>

@@ -4,10 +4,35 @@ require_once __DIR__ . '/../models/User.php';
 require_once __DIR__ . '/../models/Order.php';
 
 class ClientController extends BaseController {
+    public function carHasActiveOrder($car_id) {
+        $car_id = (int) $car_id;
+        if ($car_id <= 0) {
+            return false;
+        }
+        $sql = "
+            SELECT id FROM orders
+            WHERE car_id = ?
+              AND status NOT IN (?, ?)
+            LIMIT 1
+        ";
+        $stmt = mysqli_prepare($this->db, $sql);
+        $done = Order::STATUS_COMPLETED;
+        $cancelled = Order::STATUS_CANCELLED;
+        mysqli_stmt_bind_param($stmt, 'iss', $car_id, $done, $cancelled);
+        mysqli_stmt_execute($stmt);
+        $row = mysqli_stmt_get_result($stmt)->fetch_assoc();
+        mysqli_stmt_close($stmt);
+        return (bool) $row;
+    }
+
     public function createOrder($client_id, $car_id, $description, array $services = []) {
         $role_check = $this->requireRole([User::ROLE_CLIENT, User::ROLE_ADMIN]);
         if (!$role_check[0]) {
             return $this->fail($role_check[1]['message'], $role_check[1]['status']);
+        }
+
+        if ($this->carHasActiveOrder($car_id)) {
+            return $this->fail('Этот автомобиль уже указан в активной заявке. Дождитесь её завершения или отмены.');
         }
 
         $status = Order::STATUS_NEW;
@@ -45,7 +70,7 @@ class ClientController extends BaseController {
         }
 
         $sql = "
-            SELECT o.id, o.status, o.total_price, o.start_date, o.end_date, o.description,
+            SELECT o.id, o.car_id, o.status, o.total_price, o.start_date, o.end_date, o.description,
                    c.brand, c.model, c.gosnumber,
                    m.full_name AS mechanic_name,
                    ms.full_name AS master_name
@@ -117,6 +142,70 @@ class ClientController extends BaseController {
         }
 
         return $this->ok(['car_id' => $car_id, 'message' => 'Автомобиль добавлен']);
+    }
+
+    public function updateClientOrderDescription($client_id, $order_id, $description) {
+        $role_check = $this->requireRole([User::ROLE_CLIENT]);
+        if (!$role_check[0]) {
+            return $this->fail($role_check[1]['message'], $role_check[1]['status']);
+        }
+
+        $description = trim((string) $description);
+        if ($description === '') {
+            return $this->fail('Укажите описание заявки.');
+        }
+
+        $status_new = Order::STATUS_NEW;
+        $sql = "UPDATE orders SET description = ? WHERE id = ? AND client_id = ? AND status = ?";
+        $stmt = mysqli_prepare($this->db, $sql);
+        mysqli_stmt_bind_param($stmt, 'siis', $description, $order_id, $client_id, $status_new);
+        mysqli_stmt_execute($stmt);
+        $affected = mysqli_stmt_affected_rows($stmt);
+        mysqli_stmt_close($stmt);
+
+        if ($affected < 1) {
+            return $this->fail('Изменить описание можно только у новой заявки, которую мастер ещё не принял.');
+        }
+
+        return $this->ok(['message' => 'Описание заявки обновлено.']);
+    }
+
+    public function updateClientCar($client_id, $car_id, $vin, $brand, $model, $year, $gosnumber) {
+        $role_check = $this->requireRole([User::ROLE_CLIENT]);
+        if (!$role_check[0]) {
+            return $this->fail($role_check[1]['message'], $role_check[1]['status']);
+        }
+
+        if (!$this->carBelongsToClient($car_id, $client_id)) {
+            return $this->fail('Автомобиль не найден.');
+        }
+
+        if ($this->carHasActiveOrder($car_id)) {
+            return $this->fail('Нельзя редактировать автомобиль, пока он участвует в активной заявке.');
+        }
+
+        $check_sql = "SELECT id FROM cars WHERE vin = ? AND id != ? LIMIT 1";
+        $check_stmt = mysqli_prepare($this->db, $check_sql);
+        mysqli_stmt_bind_param($check_stmt, 'si', $vin, $car_id);
+        mysqli_stmt_execute($check_stmt);
+        $exists = mysqli_stmt_get_result($check_stmt)->fetch_assoc();
+        mysqli_stmt_close($check_stmt);
+
+        if ($exists) {
+            return $this->fail('Автомобиль с таким VIN уже зарегистрирован.');
+        }
+
+        $upd_sql = "UPDATE cars SET vin = ?, brand = ?, model = ?, year = ?, gosnumber = ? WHERE id = ? AND user_id = ?";
+        $upd_stmt = mysqli_prepare($this->db, $upd_sql);
+        mysqli_stmt_bind_param($upd_stmt, 'sssisi', $vin, $brand, $model, $year, $gosnumber, $car_id, $client_id);
+        $ok = mysqli_stmt_execute($upd_stmt);
+        mysqli_stmt_close($upd_stmt);
+
+        if (!$ok) {
+            return $this->fail('Не удалось сохранить данные автомобиля', 500);
+        }
+
+        return $this->ok(['message' => 'Данные автомобиля сохранены.']);
     }
 
     public function carBelongsToClient($car_id, $client_id) {

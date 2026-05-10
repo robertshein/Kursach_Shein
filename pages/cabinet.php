@@ -35,6 +35,11 @@ function cabinet_order_status_label($status, array $labels)
     return $labels[$status] ?? $status;
 }
 
+function cabinet_order_is_terminal($status)
+{
+    return in_array($status, [Order::STATUS_COMPLETED, Order::STATUS_CANCELLED], true);
+}
+
 $client_controller = new ClientController($mysql_connection);
 $client_id = (int) $user['id'];
 
@@ -80,41 +85,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $user = $_SESSION['user'];
             }
         }
-    } elseif ($action === 'add_car') {
+    } elseif ($action === 'update_order_description') {
+        $order_id = (int) ($_POST['order_id'] ?? 0);
+        $description = trim($_POST['description'] ?? '');
+        if ($order_id <= 0) {
+            $flash_error = 'Некорректная заявка.';
+        } else {
+            $r = $client_controller->updateClientOrderDescription($client_id, $order_id, $description);
+            if (!($r['success'] ?? false)) {
+                $flash_error = $r['message'] ?? 'Не удалось обновить описание.';
+            } else {
+                $flash_success = $r['data']['message'] ?? 'Описание сохранено.';
+            }
+        }
+    } elseif ($action === 'update_car') {
+        $car_id = (int) ($_POST['car_id'] ?? 0);
         $vin = trim($_POST['vin'] ?? '');
         $brand = trim($_POST['brand'] ?? '');
         $model = trim($_POST['model'] ?? '');
         $year = (int) ($_POST['year'] ?? 0);
         $gosnumber = trim($_POST['gosnumber'] ?? '');
 
-        if ($vin === '' || $brand === '' || $model === '' || $gosnumber === '') {
+        if ($car_id <= 0) {
+            $flash_error = 'Некорректный автомобиль.';
+        } elseif ($vin === '' || $brand === '' || $model === '' || $gosnumber === '') {
             $flash_error = 'Заполните все поля автомобиля.';
         } elseif ($year < 1980 || $year > (int) date('Y') + 1) {
             $flash_error = 'Укажите корректный год выпуска.';
         } else {
-            $r = $client_controller->addClientCar($client_id, $vin, $brand, $model, $year, $gosnumber);
+            $r = $client_controller->updateClientCar($client_id, $car_id, $vin, $brand, $model, $year, $gosnumber);
             if (!($r['success'] ?? false)) {
-                $flash_error = $r['message'] ?? 'Ошибка при добавлении авто.';
+                $flash_error = $r['message'] ?? 'Не удалось сохранить автомобиль.';
             } else {
-                $flash_success = $r['data']['message'] ?? 'Автомобиль добавлен.';
-            }
-        }
-    } elseif ($action === 'create_order') {
-        $car_id = (int) ($_POST['car_id'] ?? 0);
-        $description = trim($_POST['description'] ?? '');
-
-        if ($car_id <= 0) {
-            $flash_error = 'Выберите автомобиль.';
-        } elseif ($description === '') {
-            $flash_error = 'Опишите, что нужно сделать с автомобилем.';
-        } elseif (!$client_controller->carBelongsToClient($car_id, $client_id)) {
-            $flash_error = 'Выбранный автомобиль не принадлежит вам.';
-        } else {
-            $r = $client_controller->createOrder($client_id, $car_id, $description, []);
-            if (!($r['success'] ?? false)) {
-                $flash_error = $r['message'] ?? 'Не удалось создать заявку.';
-            } else {
-                $flash_success = $r['data']['message'] ?? 'Заявка создана.';
+                $flash_success = $r['data']['message'] ?? 'Данные сохранены.';
             }
         }
     }
@@ -129,11 +132,11 @@ if ($orders_r['success'] ?? false) {
     $orders = $orders_r['data']['orders'] ?? [];
 }
 
-$active_orders = 0;
+$car_ids_in_active_orders = [];
 foreach ($orders as $o) {
     $st = $o['status'] ?? '';
-    if (!in_array($st, [Order::STATUS_COMPLETED, Order::STATUS_CANCELLED], true)) {
-        $active_orders++;
+    if (!cabinet_order_is_terminal($st)) {
+        $car_ids_in_active_orders[(int) ($o['car_id'] ?? 0)] = true;
     }
 }
 
@@ -163,13 +166,7 @@ $nav_show_cabinet = true;
         <?php endif; ?>
 
         <h1 class="sans">Личный кабинет</h1>
-        <p class="lead">Здравствуйте, <?php echo htmlspecialchars($user['full_name'] ?? ''); ?>. Управляйте контактными данными, автомобилями и заявками в сервис.</p>
-
-        <div class="stats sans">
-            <div class="stat"><div class="num"><?php echo count($cars); ?></div><div class="lbl">Автомобилей</div></div>
-            <div class="stat"><div class="num"><?php echo count($orders); ?></div><div class="lbl">Всего заявок</div></div>
-            <div class="stat"><div class="num"><?php echo (int) $active_orders; ?></div><div class="lbl">Активных</div></div>
-        </div>
+        <p class="lead">Здравствуйте, <?php echo htmlspecialchars($user['full_name'] ?? ''); ?>. Измените личные данные здесь, а новую заявку и автомобиль можно добавить на <a href="<?php echo htmlspecialchars($nav_home_href); ?>" style="color: var(--focus); font-weight: 600; text-decoration: none;">главной</a>.</p>
 
         <section class="card" id="profile">
             <h2>Личные данные</h2>
@@ -203,68 +200,6 @@ $nav_show_cabinet = true;
                 <button type="submit" class="btn-submit">Сохранить изменения</button>
             </form>
         </section>
-
-        <div class="grid-split">
-            <section class="card">
-                <h2>Новая заявка</h2>
-                <?php if (empty($cars)): ?>
-                    <p class="empty">Добавьте автомобиль ниже — затем можно будет выбрать его в заявке.</p>
-                <?php else: ?>
-                    <form method="post" action="">
-                        <input type="hidden" name="action" value="create_order">
-                        <div class="field">
-                            <label for="car_id">Автомобиль</label>
-                            <select id="car_id" name="car_id" required>
-                                <option value="">Выберите</option>
-                                <?php foreach ($cars as $c): ?>
-                                    <option value="<?php echo (int) $c['id']; ?>">
-                                        <?php echo htmlspecialchars($c['brand'] . ' ' . $c['model'] . ' · ' . $c['gosnumber']); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div class="field">
-                            <label for="description">Описание</label>
-                            <textarea id="description" name="description" required placeholder="Опишите симптомы или желаемые работы"></textarea>
-                        </div>
-                        <button type="submit" class="btn-submit">Отправить заявку</button>
-                        <p class="hint">После отправки заявку обработает мастер.</p>
-                    </form>
-                <?php endif; ?>
-            </section>
-
-            <section class="card">
-                <h2>Добавить автомобиль</h2>
-                <form method="post" action="">
-                    <input type="hidden" name="action" value="add_car">
-                    <div class="row2">
-                        <div class="field">
-                            <label for="brand">Марка</label>
-                            <input id="brand" name="brand" type="text" required maxlength="80" placeholder="Toyota">
-                        </div>
-                        <div class="field">
-                            <label for="model">Модель</label>
-                            <input id="model" name="model" type="text" required maxlength="80" placeholder="Camry">
-                        </div>
-                    </div>
-                    <div class="row2">
-                        <div class="field">
-                            <label for="year">Год</label>
-                            <input id="year" name="year" type="number" required min="1980" max="<?php echo (int) date('Y') + 1; ?>">
-                        </div>
-                        <div class="field">
-                            <label for="gosnumber">Госномер</label>
-                            <input id="gosnumber" name="gosnumber" type="text" required maxlength="20" placeholder="А003АА159">
-                        </div>
-                    </div>
-                    <div class="field">
-                        <label for="vin">VIN</label>
-                        <input id="vin" name="vin" type="text" required maxlength="64" placeholder="Идентификатор транспортного средства">
-                    </div>
-                    <button type="submit" class="btn-submit">Добавить</button>
-                </form>
-            </section>
-        </div>
 
         <section class="card">
             <h2>Мои заявки</h2>
@@ -303,12 +238,23 @@ $nav_show_cabinet = true;
                                 $desc_short = function_exists('mb_substr')
                                     ? (mb_strlen($desc) > 100 ? mb_substr($desc, 0, 100) . '…' : $desc)
                                     : (strlen($desc) > 100 ? substr($desc, 0, 100) . '…' : $desc);
+                                $can_edit_order_desc = ($st === Order::STATUS_NEW);
                                 ?>
                                 <tr>
                                     <td><?php echo (int) ($o['id'] ?? 0); ?></td>
                                     <td>
                                         <?php echo htmlspecialchars(trim(($o['brand'] ?? '') . ' ' . ($o['model'] ?? '') . ', ' . ($o['gosnumber'] ?? ''))); ?>
-                                        <?php if ($desc !== ''): ?>
+                                        <?php if ($can_edit_order_desc): ?>
+                                            <form method="post" action="" style="margin-top: 10px; max-width: 320px;">
+                                                <input type="hidden" name="action" value="update_order_description">
+                                                <input type="hidden" name="order_id" value="<?php echo (int) ($o['id'] ?? 0); ?>">
+                                                <div class="field" style="margin-bottom: 8px;">
+                                                    <label for="order_desc_<?php echo (int) ($o['id'] ?? 0); ?>">Описание</label>
+                                                    <textarea id="order_desc_<?php echo (int) ($o['id'] ?? 0); ?>" name="description" required maxlength="4000" rows="3"><?php echo htmlspecialchars($desc); ?></textarea>
+                                                </div>
+                                                <button type="submit" class="btn-submit">Сохранить описание</button>
+                                            </form>
+                                        <?php elseif ($desc !== ''): ?>
                                             <div class="hint" style="max-width: 280px;"><?php echo htmlspecialchars($desc_short); ?></div>
                                         <?php endif; ?>
                                     </td>
@@ -328,9 +274,46 @@ $nav_show_cabinet = true;
                 <h2>Мои автомобили</h2>
                 <ul class="car-list sans">
                     <?php foreach ($cars as $c): ?>
+                        <?php
+                        $cid = (int) ($c['id'] ?? 0);
+                        $car_busy = !empty($car_ids_in_active_orders[$cid]);
+                        ?>
                         <li>
                             <div class="car-title"><?php echo htmlspecialchars(($c['brand'] ?? '') . ' ' . ($c['model'] ?? '') . ', ' . ($c['year'] ?? '') . ' г.'); ?></div>
                             <div class="car-sub"><?php echo htmlspecialchars($c['gosnumber'] ?? ''); ?> · VIN <?php echo htmlspecialchars($c['vin'] ?? ''); ?></div>
+                            <?php if ($car_busy): ?>
+                                <p class="hint" style="margin: 10px 0 0;">Редактирование недоступно: автомобиль участвует в активной заявке.</p>
+                            <?php else: ?>
+                                <form method="post" action="" style="margin-top: 12px;">
+                                    <input type="hidden" name="action" value="update_car">
+                                    <input type="hidden" name="car_id" value="<?php echo $cid; ?>">
+                                    <div class="row2">
+                                        <div class="field">
+                                            <label for="ebrand_<?php echo $cid; ?>">Марка</label>
+                                            <input id="ebrand_<?php echo $cid; ?>" name="brand" type="text" required maxlength="80" value="<?php echo htmlspecialchars($c['brand'] ?? ''); ?>">
+                                        </div>
+                                        <div class="field">
+                                            <label for="emodel_<?php echo $cid; ?>">Модель</label>
+                                            <input id="emodel_<?php echo $cid; ?>" name="model" type="text" required maxlength="80" value="<?php echo htmlspecialchars($c['model'] ?? ''); ?>">
+                                        </div>
+                                    </div>
+                                    <div class="row2">
+                                        <div class="field">
+                                            <label for="eyear_<?php echo $cid; ?>">Год</label>
+                                            <input id="eyear_<?php echo $cid; ?>" name="year" type="number" required min="1980" max="<?php echo (int) date('Y') + 1; ?>" value="<?php echo (int) ($c['year'] ?? 0); ?>">
+                                        </div>
+                                        <div class="field">
+                                            <label for="egos_<?php echo $cid; ?>">Госномер</label>
+                                            <input id="egos_<?php echo $cid; ?>" name="gosnumber" type="text" required maxlength="20" value="<?php echo htmlspecialchars($c['gosnumber'] ?? ''); ?>">
+                                        </div>
+                                    </div>
+                                    <div class="field">
+                                        <label for="evin_<?php echo $cid; ?>">VIN</label>
+                                        <input id="evin_<?php echo $cid; ?>" name="vin" type="text" required maxlength="64" value="<?php echo htmlspecialchars($c['vin'] ?? ''); ?>">
+                                    </div>
+                                    <button type="submit" class="btn-submit">Сохранить автомобиль</button>
+                                </form>
+                            <?php endif; ?>
                         </li>
                     <?php endforeach; ?>
                 </ul>
