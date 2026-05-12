@@ -1,0 +1,962 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "АвтоПлюс REST API",
+    "description": "REST API для системы управления автосервисом АвтоПлюс.\n\n### Аутентификация\nАутентификация выполняется через сессии (cookie). Вызовите `POST /api/auth/login` — браузер сохранит сессионную куку, последующие запросы будут авторизованы автоматически.\n\n### Роли\n| Роль | Описание |\n|------|----------|\n| `client` | Клиент: управляет своими автомобилями и заявками |\n| `mechanic` | Механик: видит и обрабатывает назначенные заявки |\n| `master` | Мастер: назначает механиков, контролирует заявки |\n| `admin` | Администратор: полный доступ |\n\n### Статусы заявок\n`new → assigned → in_progress ⇄ waiting_parts → completed / cancelled`",
+    "version": "1.0.0",
+    "contact": {
+      "name": "АвтоПлюс"
+    }
+  },
+  "servers": [
+    {
+      "url": "/api",
+      "description": "Локальный сервер"
+    }
+  ],
+  "tags": [
+    { "name": "Auth",      "description": "Аутентификация и регистрация" },
+    { "name": "Orders",    "description": "Заявки на обслуживание" },
+    { "name": "Cars",      "description": "Автомобили клиентов" },
+    { "name": "Mechanics", "description": "Механики и их загрузка" },
+    { "name": "Services",  "description": "Справочник услуг" },
+    { "name": "Parts",     "description": "Справочник запчастей" },
+    { "name": "Employees", "description": "Сотрудники (только admin)" },
+    { "name": "Purchases", "description": "Запросы на закупку запчастей" },
+    { "name": "Salary",    "description": "Зарплатные записи (только admin)" },
+    { "name": "Stats",     "description": "Статистика дашборда (только admin)" }
+  ],
+  "components": {
+    "schemas": {
+      "SuccessEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": true },
+          "data":    { "type": "object" }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "properties": {
+          "success": { "type": "boolean", "example": false },
+          "message": { "type": "string",  "example": "Текст ошибки" }
+        }
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "id":         { "type": "integer" },
+          "full_name":  { "type": "string" },
+          "phone":      { "type": "string" },
+          "email":      { "type": "string", "format": "email" },
+          "role":       { "type": "string", "enum": ["client","mechanic","master","admin"] },
+          "salary":     { "type": "number" },
+          "is_active":  { "type": "integer", "enum": [0, 1] },
+          "created_at": { "type": "string",  "format": "date-time" }
+        }
+      },
+      "Car": {
+        "type": "object",
+        "properties": {
+          "id":        { "type": "integer" },
+          "vin":       { "type": "string" },
+          "brand":     { "type": "string" },
+          "model":     { "type": "string" },
+          "year":      { "type": "integer" },
+          "gosnumber": { "type": "string" }
+        }
+      },
+      "Order": {
+        "type": "object",
+        "properties": {
+          "id":             { "type": "integer" },
+          "status":         { "type": "string", "enum": ["new","assigned","in_progress","waiting_parts","completed","cancelled"] },
+          "description":    { "type": "string" },
+          "total_price":    { "type": "number" },
+          "client_name":    { "type": "string" },
+          "mechanic_name":  { "type": "string", "nullable": true },
+          "master_name":    { "type": "string", "nullable": true },
+          "brand":          { "type": "string" },
+          "model":          { "type": "string" },
+          "gosnumber":      { "type": "string" },
+          "services_summary":{ "type": "string", "nullable": true },
+          "start_date":     { "type": "string", "format": "date", "nullable": true },
+          "end_date":       { "type": "string", "format": "date", "nullable": true },
+          "created_at":     { "type": "string", "format": "date-time" }
+        }
+      },
+      "PurchaseRequest": {
+        "type": "object",
+        "properties": {
+          "id":                  { "type": "integer" },
+          "order_id":            { "type": "integer" },
+          "part_name":           { "type": "string" },
+          "article":             { "type": "string" },
+          "part_price":          { "type": "number" },
+          "quantity":            { "type": "integer" },
+          "status":              { "type": "string", "enum": ["pending","approved","rejected","ordered","received"] },
+          "requested_by_master": { "type": "string" },
+          "approved_by_admin":   { "type": "string", "nullable": true },
+          "comment":             { "type": "string" },
+          "created_at":          { "type": "string", "format": "date-time" },
+          "resolved_at":         { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "SalaryRecord": {
+        "type": "object",
+        "properties": {
+          "id":                    { "type": "integer" },
+          "employee_name":         { "type": "string" },
+          "employee_role":         { "type": "string" },
+          "amount":                { "type": "number" },
+          "period_start":          { "type": "string", "format": "date" },
+          "period_end":            { "type": "string", "format": "date" },
+          "status":                { "type": "string", "enum": ["draft","approved","paid","rejected"] },
+          "comment":               { "type": "string" },
+          "created_by_admin_name": { "type": "string" },
+          "approved_at":           { "type": "string", "format": "date-time", "nullable": true },
+          "paid_at":               { "type": "string", "format": "date-time", "nullable": true }
+        }
+      },
+      "Service": {
+        "type": "object",
+        "properties": {
+          "id":    { "type": "integer" },
+          "name":  { "type": "string" },
+          "price": { "type": "number" }
+        }
+      },
+      "Part": {
+        "type": "object",
+        "properties": {
+          "id":       { "type": "integer" },
+          "name":     { "type": "string" },
+          "article":  { "type": "string" },
+          "quantity": { "type": "integer" },
+          "price":    { "type": "number" }
+        }
+      },
+      "MechanicWithLoad": {
+        "type": "object",
+        "properties": {
+          "id":            { "type": "integer" },
+          "full_name":     { "type": "string" },
+          "email":         { "type": "string" },
+          "phone":         { "type": "string" },
+          "active_orders": { "type": "integer", "description": "Количество активных заявок у механика" }
+        }
+      }
+    },
+    "responses": {
+      "401": {
+        "description": "Не авторизован",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "403": {
+        "description": "Нет доступа",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      },
+      "404": {
+        "description": "Не найдено",
+        "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } }
+      }
+    }
+  },
+  "paths": {
+
+    "/auth/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Вход в систему",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email","password"],
+                "properties": {
+                  "email":    { "type": "string", "format": "email", "example": "admin@service.local" },
+                  "password": { "type": "string", "example": "admin123" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Успешный вход",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [{ "$ref": "#/components/schemas/SuccessEnvelope" }],
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "properties": { "user": { "$ref": "#/components/schemas/User" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/401" }
+        }
+      }
+    },
+
+    "/auth/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Выход из системы",
+        "responses": {
+          "200": { "description": "Выход выполнен" }
+        }
+      }
+    },
+
+    "/auth/register": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Регистрация нового клиента",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["full_name","email","password"],
+                "properties": {
+                  "full_name": { "type": "string", "example": "Иван Иванов" },
+                  "phone":     { "type": "string", "example": "+79001234567" },
+                  "email":     { "type": "string", "format": "email" },
+                  "password":  { "type": "string", "minLength": 6 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Регистрация выполнена" },
+          "400": { "$ref": "#/components/responses/403" }
+        }
+      }
+    },
+
+    "/auth/me": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Текущий пользователь",
+        "responses": {
+          "200": {
+            "description": "Данные текущего пользователя",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [{ "$ref": "#/components/schemas/SuccessEnvelope" }],
+                  "properties": {
+                    "data": {
+                      "properties": { "user": { "$ref": "#/components/schemas/User" } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/401" }
+        }
+      }
+    },
+
+    "/orders": {
+      "get": {
+        "tags": ["Orders"],
+        "summary": "Список заявок (в зависимости от роли)",
+        "description": "- `client` → свои заявки\n- `mechanic` → назначенные ему заявки\n- `master`, `admin` → все заявки",
+        "responses": {
+          "200": {
+            "description": "Список заявок",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "orders": { "type": "array", "items": { "$ref": "#/components/schemas/Order" } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/401" }
+        }
+      },
+      "post": {
+        "tags": ["Orders"],
+        "summary": "Создать заявку (client)",
+        "description": "Автоматически назначает наименее загруженного мастера.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["car_id","description"],
+                "properties": {
+                  "car_id":      { "type": "integer" },
+                  "description": { "type": "string" },
+                  "services": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "service_id": { "type": "integer" },
+                        "quantity":   { "type": "integer", "default": 1 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Заявка создана" },
+          "400": { "description": "Ошибка валидации" },
+          "401": { "$ref": "#/components/responses/401" }
+        }
+      }
+    },
+
+    "/orders/{id}": {
+      "get": {
+        "tags": ["Orders"],
+        "summary": "Получить заявку по ID",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "Данные заявки" },
+          "404": { "$ref": "#/components/responses/404" }
+        }
+      }
+    },
+
+    "/orders/{id}/assign": {
+      "patch": {
+        "tags": ["Orders"],
+        "summary": "Назначить механика (master)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["mechanic_id"],
+                "properties": {
+                  "mechanic_id": { "type": "integer" },
+                  "comment":     { "type": "string" },
+                  "services": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "service_id": { "type": "integer" },
+                        "quantity":   { "type": "integer", "default": 1 }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Механик назначен" },
+          "400": { "description": "Заявка уже принята или механик недоступен" },
+          "403": { "$ref": "#/components/responses/403" }
+        }
+      }
+    },
+
+    "/orders/{id}/status": {
+      "patch": {
+        "tags": ["Orders"],
+        "summary": "Обновить статус заявки (mechanic)",
+        "description": "Допустимые переходы:\n- `assigned` → `in_progress`\n- `in_progress` → `waiting_parts | completed | cancelled`\n- `waiting_parts` → `in_progress | completed | cancelled`",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["status"],
+                "properties": {
+                  "status": { "type": "string", "enum": ["in_progress","waiting_parts","completed","cancelled"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Статус обновлён" },
+          "400": { "description": "Недопустимый переход статуса" },
+          "403": { "$ref": "#/components/responses/403" }
+        }
+      }
+    },
+
+    "/orders/{id}/services": {
+      "post": {
+        "tags": ["Orders"],
+        "summary": "Добавить услугу к заявке (mechanic)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["service_id"],
+                "properties": {
+                  "service_id": { "type": "integer" },
+                  "quantity":   { "type": "integer", "default": 1 },
+                  "comment":    { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Услуга добавлена" },
+          "400": { "description": "Ошибка" }
+        }
+      }
+    },
+
+    "/cars": {
+      "get": {
+        "tags": ["Cars"],
+        "summary": "Мои автомобили (client)",
+        "responses": {
+          "200": {
+            "description": "Список автомобилей",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": { "cars": { "type": "array", "items": { "$ref": "#/components/schemas/Car" } } }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/401" }
+        }
+      },
+      "post": {
+        "tags": ["Cars"],
+        "summary": "Добавить автомобиль (client)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["vin","brand","model","year","gosnumber"],
+                "properties": {
+                  "vin":       { "type": "string", "example": "XTA21099082123456" },
+                  "brand":     { "type": "string", "example": "ВАЗ" },
+                  "model":     { "type": "string", "example": "2110" },
+                  "year":      { "type": "integer", "example": 2005 },
+                  "gosnumber": { "type": "string", "example": "А123ВС77" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Автомобиль добавлен" },
+          "400": { "description": "VIN уже зарегистрирован" }
+        }
+      }
+    },
+
+    "/cars/{id}": {
+      "put": {
+        "tags": ["Cars"],
+        "summary": "Обновить автомобиль (client)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Car" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Данные обновлены" },
+          "400": { "description": "Ошибка" }
+        }
+      }
+    },
+
+    "/mechanics": {
+      "get": {
+        "tags": ["Mechanics"],
+        "summary": "Список механиков с количеством активных заявок",
+        "responses": {
+          "200": {
+            "description": "Механики",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "mechanics": { "type": "array", "items": { "$ref": "#/components/schemas/MechanicWithLoad" } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/services": {
+      "get": {
+        "tags": ["Services"],
+        "summary": "Справочник услуг",
+        "responses": {
+          "200": {
+            "description": "Список услуг",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "services": { "type": "array", "items": { "$ref": "#/components/schemas/Service" } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/parts": {
+      "get": {
+        "tags": ["Parts"],
+        "summary": "Справочник запчастей",
+        "responses": {
+          "200": {
+            "description": "Список запчастей",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "parts": { "type": "array", "items": { "$ref": "#/components/schemas/Part" } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/employees": {
+      "get": {
+        "tags": ["Employees"],
+        "summary": "Список сотрудников (admin)",
+        "responses": {
+          "200": { "description": "Сотрудники" },
+          "403": { "$ref": "#/components/responses/403" }
+        }
+      },
+      "post": {
+        "tags": ["Employees"],
+        "summary": "Добавить сотрудника (admin)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["full_name","email","password","role"],
+                "properties": {
+                  "full_name": { "type": "string" },
+                  "phone":     { "type": "string" },
+                  "email":     { "type": "string", "format": "email" },
+                  "password":  { "type": "string", "minLength": 6 },
+                  "role":      { "type": "string", "enum": ["mechanic","master","admin"] },
+                  "salary":    { "type": "number", "default": 0 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Сотрудник добавлен" },
+          "403": { "$ref": "#/components/responses/403" }
+        }
+      }
+    },
+
+    "/employees/{id}": {
+      "put": {
+        "tags": ["Employees"],
+        "summary": "Обновить данные сотрудника (admin)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "full_name": { "type": "string" },
+                  "phone":     { "type": "string" },
+                  "email":     { "type": "string" },
+                  "role":      { "type": "string" },
+                  "salary":    { "type": "number" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Обновлено" }
+        }
+      }
+    },
+
+    "/employees/{id}/active": {
+      "patch": {
+        "tags": ["Employees"],
+        "summary": "Активировать / деактивировать сотрудника (admin)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["is_active"],
+                "properties": {
+                  "is_active": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Статус изменён" }
+        }
+      }
+    },
+
+    "/employees/{id}/salary": {
+      "patch": {
+        "tags": ["Employees"],
+        "summary": "Установить оклад сотрудника (admin)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["salary"],
+                "properties": {
+                  "salary": { "type": "number", "example": 55000 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Оклад обновлён" }
+        }
+      }
+    },
+
+    "/purchases": {
+      "get": {
+        "tags": ["Purchases"],
+        "summary": "Запросы на закупку",
+        "description": "- `admin` → все запросы\n- `master` → только ожидающие (`pending`)",
+        "responses": {
+          "200": {
+            "description": "Список запросов",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "requests": { "type": "array", "items": { "$ref": "#/components/schemas/PurchaseRequest" } }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": ["Purchases"],
+        "summary": "Создать запрос на закупку (master)",
+        "description": "Заявка автоматически переходит в статус `waiting_parts`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["order_id","part_id","quantity"],
+                "properties": {
+                  "order_id": { "type": "integer" },
+                  "part_id":  { "type": "integer" },
+                  "quantity": { "type": "integer", "minimum": 1 },
+                  "comment":  { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Запрос создан" },
+          "400": { "description": "Ошибка" }
+        }
+      }
+    },
+
+    "/purchases/{id}/decide": {
+      "patch": {
+        "tags": ["Purchases"],
+        "summary": "Одобрить или отклонить запрос (admin)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["approve"],
+                "properties": {
+                  "approve": { "type": "boolean", "description": "true = одобрить, false = отклонить" },
+                  "comment": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Обработано" },
+          "403": { "$ref": "#/components/responses/403" }
+        }
+      }
+    },
+
+    "/salary": {
+      "get": {
+        "tags": ["Salary"],
+        "summary": "Зарплатные записи, сгруппированные по периодам (admin)",
+        "responses": {
+          "200": { "description": "Периоды и детали" },
+          "403": { "$ref": "#/components/responses/403" }
+        }
+      },
+      "post": {
+        "tags": ["Salary"],
+        "summary": "Создать зарплатную запись вручную (admin)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["employee_id","amount","period_start","period_end"],
+                "properties": {
+                  "employee_id":  { "type": "integer" },
+                  "amount":       { "type": "number", "example": 55000 },
+                  "period_start": { "type": "string", "format": "date", "example": "2026-05-01" },
+                  "period_end":   { "type": "string", "format": "date", "example": "2026-05-31" },
+                  "comment":      { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Запись создана" }
+        }
+      }
+    },
+
+    "/salary/generate": {
+      "post": {
+        "tags": ["Salary"],
+        "summary": "Автоматически создать ведомость за период (admin)",
+        "description": "Создаёт черновики для всех активных сотрудников с ненулевым окладом. Сотрудники, у которых уже есть запись за данный период, пропускаются.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["period_start","period_end"],
+                "properties": {
+                  "period_start": { "type": "string", "format": "date", "example": "2026-05-01" },
+                  "period_end":   { "type": "string", "format": "date", "example": "2026-05-31" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Ведомость сформирована",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "created": { "type": "integer" },
+                        "skipped": { "type": "integer" },
+                        "message": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/salary/bulk-status": {
+      "post": {
+        "tags": ["Salary"],
+        "summary": "Массовое изменение статуса зарплатных записей за период (admin)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["period_start","period_end","from_status","to_status"],
+                "properties": {
+                  "period_start": { "type": "string", "format": "date" },
+                  "period_end":   { "type": "string", "format": "date" },
+                  "from_status":  { "type": "string", "enum": ["draft","approved","paid","rejected"] },
+                  "to_status":    { "type": "string", "enum": ["draft","approved","paid","rejected"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Обновлено N записей",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "affected": { "type": "integer" },
+                        "message":  { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+
+    "/salary/{id}/status": {
+      "patch": {
+        "tags": ["Salary"],
+        "summary": "Изменить статус одной зарплатной записи (admin)",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["status"],
+                "properties": {
+                  "status": { "type": "string", "enum": ["draft","approved","paid","rejected"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Статус обновлён" }
+        }
+      }
+    },
+
+    "/stats": {
+      "get": {
+        "tags": ["Stats"],
+        "summary": "Статистика дашборда (admin)",
+        "responses": {
+          "200": {
+            "description": "Агрегированные показатели",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "properties": {
+                    "data": {
+                      "properties": {
+                        "stats": {
+                          "type": "object",
+                          "properties": {
+                            "total_orders":      { "type": "integer" },
+                            "new_orders":        { "type": "integer" },
+                            "active_employees":  { "type": "integer" },
+                            "total_clients":     { "type": "integer" },
+                            "pending_purchases": { "type": "integer" },
+                            "salary_drafts":     { "type": "integer" }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": { "$ref": "#/components/responses/403" }
+        }
+      }
+    }
+  }
+}

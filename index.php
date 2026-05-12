@@ -14,6 +14,7 @@ $user = $_SESSION['user'];
 $role = $user['role'] ?? '';
 $is_client = $role === User::ROLE_CLIENT;
 $is_master = $role === User::ROLE_MASTER;
+$is_mechanic = $role === User::ROLE_MECHANIC;
 
 $cars = [];
 $orders = [];
@@ -108,13 +109,24 @@ $nav_active = 'home';
 $nav_home_href = 'index.php';
 $nav_cabinet_href = 'pages/cabinet.php';
 $nav_logout_href = 'pages/authorization.php?logout=1';
+$is_admin = $role === User::ROLE_ADMIN;
 $nav_show_cabinet = $is_client;
 $nav_show_master = $is_master;
+$nav_show_mechanic = $is_mechanic;
+$nav_show_admin = $is_admin;
 $nav_master_section = '';
 $nav_master_index_href = 'pages/master/index.php';
 $nav_master_new_href = 'pages/master/new_orders.php';
 $nav_master_orders_href = 'pages/master/orders.php';
 $nav_master_purchases_href = 'pages/master/purchase_requests.php';
+$nav_mechanic_section = '';
+$nav_mechanic_index_href = 'pages/mechanic/index.php';
+$nav_mechanic_orders_href = 'pages/mechanic/orders.php';
+$nav_admin_section = '';
+$nav_admin_index_href = 'pages/admin/index.php';
+$nav_admin_employees_href = 'pages/admin/employees.php';
+$nav_admin_purchases_href = 'pages/admin/purchase_requests.php';
+$nav_admin_salary_href = 'pages/admin/salary.php';
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -217,10 +229,26 @@ $nav_master_purchases_href = 'pages/master/purchase_requests.php';
             <p class="sans" style="margin-top: 0;">
                 <a class="btn-submit" href="pages/master/index.php" style="display: inline-block; text-decoration: none;">Открыть панель мастера</a>
             </p>
+        <?php elseif ($is_mechanic): ?>
+            <p class="lead">
+                Вы вошли как механик. Здесь можно открыть ваши назначенные заявки и менять их статус по ходу выполнения работ.
+            </p>
+            <p class="sans" style="margin-top: 0;">
+                <a class="btn-submit" href="pages/mechanic/index.php" style="display: inline-block; text-decoration: none;">Открыть панель механика</a>
+            </p>
+        <?php elseif ($is_admin): ?>
+            <p class="lead">
+                Вы вошли как администратор. Управляйте сотрудниками, одобряйте закупки запчастей и ведите зарплатные записи.
+            </p>
+            <p class="sans" style="margin-top: 0; display: flex; flex-wrap: wrap; gap: 10px;">
+                <a class="btn-submit" href="pages/admin/index.php" style="display: inline-block; text-decoration: none;">Панель администратора</a>
+                <a class="btn-submit" href="pages/admin/employees.php" style="display: inline-block; text-decoration: none; background:#fff; color:var(--focus);">Сотрудники</a>
+                <a class="btn-submit" href="pages/admin/purchase_requests.php" style="display: inline-block; text-decoration: none; background:#fff; color:var(--focus);">Закупки</a>
+                <a class="btn-submit" href="pages/admin/salary.php" style="display: inline-block; text-decoration: none; background:#fff; color:var(--focus);">Зарплаты</a>
+            </p>
         <?php else: ?>
             <p class="staff lead">
                 Вы вошли с ролью <strong><?php echo htmlspecialchars($role); ?></strong>.
-                Интерфейс для вашей роли на главной будет расширен позже.
             </p>
         <?php endif; ?>
     </div>

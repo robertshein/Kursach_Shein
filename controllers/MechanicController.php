@@ -3,54 +3,77 @@ require_once __DIR__ . '/BaseController.php';
 require_once __DIR__ . '/../models/User.php';
 require_once __DIR__ . '/../models/Order.php';
 
-class MechanicController extends BaseController {
-    public function getMyOrders($mechanic_id) {
-        $role_check = $this->requireRole([User::ROLE_MECHANIC, User::ROLE_MASTER, User::ROLE_ADMIN]);
-        if (!$role_check[0]) {
-            return $this->fail($role_check[1]['message'], $role_check[1]['status']);
-        }
-
-        $sql = "
-            SELECT o.id, o.status, o.description, o.start_date, o.end_date, o.total_price,
-                   c.brand, c.model, c.gosnumber,
-                   u.full_name AS client_name
-            FROM orders o
-            JOIN cars c ON c.id = o.car_id
-            JOIN users u ON u.id = o.client_id
-            WHERE o.mechanic_id = ?
-            ORDER BY o.id DESC
-        ";
-
-        $stmt = mysqli_prepare($this->db, $sql);
-        mysqli_stmt_bind_param($stmt, 'i', $mechanic_id);
-        mysqli_stmt_execute($stmt);
-        $orders = mysqli_stmt_get_result($stmt)->fetch_all(MYSQLI_ASSOC);
-        mysqli_stmt_close($stmt);
-
-        return $this->ok(['orders' => $orders]);
+class MechanicController extends BaseController
+{
+    public function getMyOrders(int $mechanicId): array
+    {
+        $check = $this->requireRole([User::ROLE_MECHANIC, User::ROLE_MASTER, User::ROLE_ADMIN]);
+        if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
+        return $this->ok(['orders' => $this->orders()->getOrdersByMechanic($mechanicId)]);
     }
 
-    public function updateOrderStatus($order_id, $new_status) {
-        $role_check = $this->requireRole([User::ROLE_MECHANIC, User::ROLE_MASTER, User::ROLE_ADMIN]);
-        if (!$role_check[0]) {
-            return $this->fail($role_check[1]['message'], $role_check[1]['status']);
+    public function updateOrderStatus(int $orderId, int $mechanicId, string $newStatus): array
+    {
+        $check = $this->requireRole([User::ROLE_MECHANIC, User::ROLE_MASTER, User::ROLE_ADMIN]);
+        if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
+
+        $allowed = [Order::STATUS_IN_PROGRESS, Order::STATUS_WAITING_PARTS, Order::STATUS_COMPLETED, Order::STATUS_CANCELLED];
+        if (!in_array($newStatus, $allowed, true)) return $this->fail('Механик не может установить этот статус');
+        if ($orderId <= 0 || $mechanicId <= 0) return $this->fail('Некорректные параметры');
+
+        $order = $this->orders()->findById($orderId);
+        if (!$order || (int) $order['mechanic_id'] !== $mechanicId) return $this->fail('Заявка не найдена или не назначена вам', 404);
+
+        $current = $order['status'];
+        if (in_array($current, [Order::STATUS_COMPLETED, Order::STATUS_CANCELLED], true)) {
+            return $this->fail('Статус завершённой или отменённой заявки менять нельзя');
         }
 
-        if (!Order::isValidStatus($new_status)) {
-            return $this->fail('Недопустимый статус заявки');
+        $transitions = [
+            Order::STATUS_ASSIGNED      => [Order::STATUS_IN_PROGRESS],
+            Order::STATUS_IN_PROGRESS   => [Order::STATUS_WAITING_PARTS, Order::STATUS_COMPLETED, Order::STATUS_CANCELLED],
+            Order::STATUS_WAITING_PARTS => [Order::STATUS_IN_PROGRESS,   Order::STATUS_COMPLETED, Order::STATUS_CANCELLED],
+        ];
+        if (!in_array($newStatus, $transitions[$current] ?? [], true)) {
+            return $this->fail("Переход из «{$current}» в «{$newStatus}» недопустим");
         }
 
-        $sql = "UPDATE orders SET status = ? WHERE id = ?";
-        $stmt = mysqli_prepare($this->db, $sql);
-        mysqli_stmt_bind_param($stmt, 'si', $new_status, $order_id);
-        $ok = mysqli_stmt_execute($stmt);
-        mysqli_stmt_close($stmt);
+        if ($this->orders()->updateStatus($orderId, $newStatus, $mechanicId) < 1) return $this->fail('Статус не изменён');
+        return $this->ok(['message' => 'Статус заявки обновлён']);
+    }
 
-        if (!$ok) {
-            return $this->fail('Не удалось обновить статус', 500);
+    public function getServices(): array
+    {
+        $check = $this->requireRole([User::ROLE_MECHANIC, User::ROLE_MASTER, User::ROLE_ADMIN]);
+        if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
+        return $this->ok(['services' => $this->services()->getAll()]);
+    }
+
+    public function addServiceToOrder(int $orderId, int $mechanicId, int $serviceId, int $quantity = 1, string $comment = ''): array
+    {
+        $check = $this->requireRole([User::ROLE_MECHANIC, User::ROLE_MASTER, User::ROLE_ADMIN]);
+        if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
+
+        if ($orderId <= 0 || $mechanicId <= 0 || $serviceId <= 0) return $this->fail('Некорректные параметры');
+        $quantity = max(1, $quantity);
+
+        $order = $this->orders()->findById($orderId);
+        if (!$order || (int) $order['mechanic_id'] !== $mechanicId) return $this->fail('Заявка не найдена или не назначена вам');
+        if (in_array($order['status'], [Order::STATUS_COMPLETED, Order::STATUS_CANCELLED], true)) {
+            return $this->fail('Нельзя добавлять услуги в завершённую или отменённую заявку');
         }
+        if (!$this->services()->exists($serviceId)) return $this->fail('Услуга не найдена');
 
-        return $this->ok(['message' => 'Статус заявки обновлен']);
+        mysqli_begin_transaction($this->db);
+        if (!$this->orders()->upsertService($orderId, $serviceId, $quantity, trim($comment))) {
+            mysqli_rollback($this->db);
+            return $this->fail('Не удалось добавить услугу в заявку', 500);
+        }
+        if (!$this->orders()->recalculateTotal($orderId)) {
+            mysqli_rollback($this->db);
+            return $this->fail('Не удалось пересчитать итоговую сумму заявки', 500);
+        }
+        mysqli_commit($this->db);
+        return $this->ok(['message' => 'Услуга добавлена в заявку']);
     }
 }
-?>
