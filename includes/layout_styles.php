@@ -190,6 +190,7 @@
     }
     .badge-done { border-color: var(--ok-border); background: var(--ok-bg); color: var(--ok-text); }
     .badge-warn { border-color: #ffe082; background: #fff8e1; color: #6d4c41; }
+    .badge-err  { border-color: #fca5a5; background: #fee2e2; color: #b91c1c; }
     .empty { color: var(--muted); margin: 0; font-size: 0.92rem; }
     .car-list { list-style: none; padding: 0; margin: 0; }
     .car-list li {

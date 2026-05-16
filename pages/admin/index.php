@@ -22,7 +22,7 @@ if ($r['success'] ?? false) {
 
     <div class="page">
         <h1 class="sans">Панель администратора</h1>
-        <p class="lead">Здравствуйте, <?php echo htmlspecialchars($admin_user['full_name'] ?? ''); ?>. Управляйте сотрудниками, закупками и зарплатами.</p>
+        <p class="lead">Здравствуйте, <?php echo htmlspecialchars($admin_user['full_name'] ?? ''); ?>. Управляйте сотрудниками и закупками.</p>
 
         <div class="stats sans">
             <div class="stat">
@@ -42,10 +42,6 @@ if ($r['success'] ?? false) {
                 <div class="lbl">Активных сотрудников</div>
             </div>
             <div class="stat">
-                <div class="num"><?php echo (int) ($stats['salary_drafts'] ?? 0); ?></div>
-                <div class="lbl">Зарплат на согласовании</div>
-            </div>
-            <div class="stat">
                 <div class="num"><?php echo (int) ($stats['total_clients'] ?? 0); ?></div>
                 <div class="lbl">Клиентов</div>
             </div>
@@ -54,6 +50,14 @@ if ($r['success'] ?? false) {
         <section class="card">
             <h2>Быстрые действия</h2>
             <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 4px;">
+                <a class="btn-submit" href="orders.php" style="display:inline-block; text-decoration:none; background:#fff; color:var(--focus);">
+                    Все заявки
+                    <?php if (!empty($stats['total_orders'])): ?>
+                        <span style="background:var(--focus);color:#fff;border-radius:10px;padding:1px 7px;font-size:0.75rem;margin-left:4px;">
+                            <?php echo (int) $stats['total_orders']; ?>
+                        </span>
+                    <?php endif; ?>
+                </a>
                 <a class="btn-submit" href="employees.php" style="display:inline-block; text-decoration:none;">
                     Сотрудники
                 </a>
@@ -65,13 +69,11 @@ if ($r['success'] ?? false) {
                         </span>
                     <?php endif; ?>
                 </a>
-                <a class="btn-submit" href="salary.php" style="display:inline-block; text-decoration:none; background:#fff; color:var(--focus);">
-                    Зарплаты
-                    <?php if (!empty($stats['salary_drafts'])): ?>
-                        <span style="background:var(--focus);color:#fff;border-radius:10px;padding:1px 7px;font-size:0.75rem;margin-left:4px;">
-                            <?php echo (int) $stats['salary_drafts']; ?>
-                        </span>
-                    <?php endif; ?>
+                <a class="btn-submit" href="services.php" style="display:inline-block; text-decoration:none; background:#fff; color:var(--focus);">
+                    Услуги
+                </a>
+                <a class="btn-submit" href="parts.php" style="display:inline-block; text-decoration:none; background:#fff; color:var(--focus);">
+                    Запчасти
                 </a>
             </div>
         </section>
@@ -79,8 +81,8 @@ if ($r['success'] ?? false) {
         <section class="card">
             <h2>Отчётность</h2>
             <p class="hint" style="margin-top:0; margin-bottom:14px;">
-                Системный отчёт содержит 5 листов: сводная статистика, все заявки,
-                список сотрудников, история закупок и зарплатные записи.
+                Системный отчёт содержит 4 листа: сводная статистика, все заявки,
+                список сотрудников и история закупок.
             </p>
             <a href="report_download.php"
                class="btn-submit"

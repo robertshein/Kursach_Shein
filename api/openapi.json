@@ -23,7 +23,6 @@
     { "name": "Parts",     "description": "Справочник запчастей" },
     { "name": "Employees", "description": "Сотрудники (только admin)" },
     { "name": "Purchases", "description": "Запросы на закупку запчастей" },
-    { "name": "Salary",    "description": "Зарплатные записи (только admin)" },
     { "name": "Stats",     "description": "Статистика дашборда (только admin)" }
   ],
   "components": {
@@ -50,7 +49,6 @@
           "phone":      { "type": "string" },
           "email":      { "type": "string", "format": "email" },
           "role":       { "type": "string", "enum": ["client","mechanic","master","admin"] },
-          "salary":     { "type": "number" },
           "is_active":  { "type": "integer", "enum": [0, 1] },
           "created_at": { "type": "string",  "format": "date-time" }
         }
@@ -100,22 +98,6 @@
           "comment":             { "type": "string" },
           "created_at":          { "type": "string", "format": "date-time" },
           "resolved_at":         { "type": "string", "format": "date-time", "nullable": true }
-        }
-      },
-      "SalaryRecord": {
-        "type": "object",
-        "properties": {
-          "id":                    { "type": "integer" },
-          "employee_name":         { "type": "string" },
-          "employee_role":         { "type": "string" },
-          "amount":                { "type": "number" },
-          "period_start":          { "type": "string", "format": "date" },
-          "period_end":            { "type": "string", "format": "date" },
-          "status":                { "type": "string", "enum": ["draft","approved","paid","rejected"] },
-          "comment":               { "type": "string" },
-          "created_by_admin_name": { "type": "string" },
-          "approved_at":           { "type": "string", "format": "date-time", "nullable": true },
-          "paid_at":               { "type": "string", "format": "date-time", "nullable": true }
         }
       },
       "Service": {
@@ -605,8 +587,7 @@
                   "phone":     { "type": "string" },
                   "email":     { "type": "string", "format": "email" },
                   "password":  { "type": "string", "minLength": 6 },
-                  "role":      { "type": "string", "enum": ["mechanic","master","admin"] },
-                  "salary":    { "type": "number", "default": 0 }
+                  "role":      { "type": "string", "enum": ["mechanic","master","admin"] }
                 }
               }
             }
@@ -634,8 +615,7 @@
                   "full_name": { "type": "string" },
                   "phone":     { "type": "string" },
                   "email":     { "type": "string" },
-                  "role":      { "type": "string" },
-                  "salary":    { "type": "number" }
+                  "role":      { "type": "string" }
                 }
               }
             }
@@ -668,31 +648,6 @@
         },
         "responses": {
           "200": { "description": "Статус изменён" }
-        }
-      }
-    },
-
-    "/employees/{id}/salary": {
-      "patch": {
-        "tags": ["Employees"],
-        "summary": "Установить оклад сотрудника (admin)",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["salary"],
-                "properties": {
-                  "salary": { "type": "number", "example": 55000 }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": { "description": "Оклад обновлён" }
         }
       }
     },
@@ -772,153 +727,6 @@
         "responses": {
           "200": { "description": "Обработано" },
           "403": { "$ref": "#/components/responses/403" }
-        }
-      }
-    },
-
-    "/salary": {
-      "get": {
-        "tags": ["Salary"],
-        "summary": "Зарплатные записи, сгруппированные по периодам (admin)",
-        "responses": {
-          "200": { "description": "Периоды и детали" },
-          "403": { "$ref": "#/components/responses/403" }
-        }
-      },
-      "post": {
-        "tags": ["Salary"],
-        "summary": "Создать зарплатную запись вручную (admin)",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["employee_id","amount","period_start","period_end"],
-                "properties": {
-                  "employee_id":  { "type": "integer" },
-                  "amount":       { "type": "number", "example": 55000 },
-                  "period_start": { "type": "string", "format": "date", "example": "2026-05-01" },
-                  "period_end":   { "type": "string", "format": "date", "example": "2026-05-31" },
-                  "comment":      { "type": "string" }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": { "description": "Запись создана" }
-        }
-      }
-    },
-
-    "/salary/generate": {
-      "post": {
-        "tags": ["Salary"],
-        "summary": "Автоматически создать ведомость за период (admin)",
-        "description": "Создаёт черновики для всех активных сотрудников с ненулевым окладом. Сотрудники, у которых уже есть запись за данный период, пропускаются.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["period_start","period_end"],
-                "properties": {
-                  "period_start": { "type": "string", "format": "date", "example": "2026-05-01" },
-                  "period_end":   { "type": "string", "format": "date", "example": "2026-05-31" }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "201": {
-            "description": "Ведомость сформирована",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "data": {
-                      "properties": {
-                        "created": { "type": "integer" },
-                        "skipped": { "type": "integer" },
-                        "message": { "type": "string" }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-
-    "/salary/bulk-status": {
-      "post": {
-        "tags": ["Salary"],
-        "summary": "Массовое изменение статуса зарплатных записей за период (admin)",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["period_start","period_end","from_status","to_status"],
-                "properties": {
-                  "period_start": { "type": "string", "format": "date" },
-                  "period_end":   { "type": "string", "format": "date" },
-                  "from_status":  { "type": "string", "enum": ["draft","approved","paid","rejected"] },
-                  "to_status":    { "type": "string", "enum": ["draft","approved","paid","rejected"] }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Обновлено N записей",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "data": {
-                      "properties": {
-                        "affected": { "type": "integer" },
-                        "message":  { "type": "string" }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-
-    "/salary/{id}/status": {
-      "patch": {
-        "tags": ["Salary"],
-        "summary": "Изменить статус одной зарплатной записи (admin)",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["status"],
-                "properties": {
-                  "status": { "type": "string", "enum": ["draft","approved","paid","rejected"] }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": { "description": "Статус обновлён" }
         }
       }
     },

@@ -6,7 +6,7 @@ class UserContext extends AppContext
     public function findById(int $id): ?array
     {
         return $this->fetchOne(
-            "SELECT id, full_name, phone, email, role, salary, is_active, created_at FROM users WHERE id = ? LIMIT 1",
+            "SELECT id, full_name, phone, email, role, is_active, created_at FROM users WHERE id = ? LIMIT 1",
             'i', [$id]
         );
     }
@@ -14,7 +14,7 @@ class UserContext extends AppContext
     public function findByEmailWithPassword(string $email): ?array
     {
         return $this->fetchOne(
-            "SELECT id, full_name, phone, email, role, password, salary, is_active FROM users WHERE email = ? LIMIT 1",
+            "SELECT id, full_name, phone, email, role, password, is_active FROM users WHERE email = ? LIMIT 1",
             's', [$email]
         );
     }
@@ -30,7 +30,7 @@ class UserContext extends AppContext
     public function getEmployees(): array
     {
         return $this->fetchAll(
-            "SELECT id, full_name, phone, email, role, salary, is_active, created_at FROM users WHERE role != 'client' ORDER BY role, full_name"
+            "SELECT id, full_name, phone, email, role, is_active, created_at FROM users WHERE role != 'client' ORDER BY role, full_name"
         );
     }
 
@@ -82,13 +82,6 @@ class UserContext extends AppContext
         );
     }
 
-    public function getActiveEmployeesWithSalary(): array
-    {
-        return $this->fetchAll(
-            "SELECT id, full_name, salary FROM users WHERE role != 'client' AND is_active = 1 AND salary > 0"
-        );
-    }
-
     public function isActiveMechanic(int $id): bool
     {
         return (bool) $this->fetchOne(
@@ -97,19 +90,19 @@ class UserContext extends AppContext
         );
     }
 
-    public function create(string $fullName, string $phone, string $email, string $role, string $passwordHash, float $salary = 0): int
+    public function create(string $fullName, string $phone, string $email, string $role, string $passwordHash): int
     {
         return $this->insert(
-            "INSERT INTO users (full_name, phone, email, role, password, salary, is_active) VALUES (?, ?, ?, ?, ?, ?, 1)",
-            'sssssd', [$fullName, $phone, $email, $role, $passwordHash, $salary]
+            "INSERT INTO users (full_name, phone, email, role, password, is_active) VALUES (?, ?, ?, ?, ?, 1)",
+            'sssss', [$fullName, $phone, $email, $role, $passwordHash]
         );
     }
 
-    public function update(int $id, string $fullName, string $phone, string $email, string $role, float $salary): bool
+    public function update(int $id, string $fullName, string $phone, string $email, string $role): bool
     {
         return $this->execute(
-            "UPDATE users SET full_name = ?, phone = ?, email = ?, role = ?, salary = ? WHERE id = ?",
-            'ssssdi', [$fullName, $phone, $email, $role, $salary, $id]
+            "UPDATE users SET full_name = ?, phone = ?, email = ?, role = ? WHERE id = ?",
+            'ssssi', [$fullName, $phone, $email, $role, $id]
         );
     }
 
@@ -135,14 +128,6 @@ class UserContext extends AppContext
         return $this->execute(
             "UPDATE users SET is_active = ? WHERE id = ?",
             'ii', [$val, $id]
-        );
-    }
-
-    public function setSalary(int $id, float $salary): bool
-    {
-        return $this->execute(
-            "UPDATE users SET salary = ? WHERE id = ?",
-            'di', [$salary, $id]
         );
     }
 }

@@ -12,6 +12,17 @@ if ($svc_r['success'] ?? false) {
     $services_catalog = $svc_r['data']['services'] ?? [];
 }
 
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'cancel_order') {
+    $order_id      = (int) ($_POST['order_id'] ?? 0);
+    $cancel_comment = trim($_POST['cancel_comment'] ?? '');
+    $r = $master_controller->cancelOrder($order_id, $master_id, $cancel_comment);
+    if (!($r['success'] ?? false)) {
+        $flash_error = $r['message'] ?? 'Не удалось отменить заявку.';
+    } else {
+        $flash_success = $r['data']['message'] ?? 'Заявка отменена.';
+    }
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'assign_mechanic') {
     $order_id = (int) ($_POST['order_id'] ?? 0);
     $mechanic_id = (int) ($_POST['mechanic_id'] ?? 0);
@@ -161,6 +172,32 @@ if ($mech_r['success'] ?? false) {
 
                         <button type="submit" class="btn-submit" <?php echo empty($mechanics) ? 'disabled' : ''; ?>>Назначить механика</button>
                     </form>
+
+                    <details style="margin-top:16px;">
+                        <summary style="cursor:pointer; color:#b91c1c; font-size:0.9rem; font-weight:600; user-select:none;">
+                            Отменить заявку
+                        </summary>
+                        <div style="margin-top:10px; padding:12px 16px; border:1px solid #fca5a5; border-radius:6px; background:#fff5f5;">
+                            <p class="hint" style="margin:0 0 8px; color:#7f1d1d;">
+                                Укажите причину — клиент её увидит в личном кабинете.
+                            </p>
+                            <form method="post" action="">
+                                <input type="hidden" name="action"   value="cancel_order">
+                                <input type="hidden" name="order_id" value="<?php echo $oid; ?>">
+                                <div class="field" style="margin-bottom:8px;">
+                                    <label for="cancel_comment_<?php echo $oid; ?>">Причина отмены</label>
+                                    <textarea id="cancel_comment_<?php echo $oid; ?>" name="cancel_comment"
+                                              required rows="2" maxlength="1000"
+                                              placeholder="Например: нет свободных механиков, обратитесь позже"></textarea>
+                                </div>
+                                <button type="submit"
+                                        style="padding:6px 16px; border:1px solid #ef4444; border-radius:4px; background:#ef4444; color:#fff; font-weight:600; cursor:pointer; font-family:inherit;"
+                                        onclick="return confirm('Отменить заявку №<?php echo $oid; ?>? Действие необратимо.')">
+                                    Подтвердить отмену
+                                </button>
+                            </form>
+                        </div>
+                    </details>
                 </section>
             <?php endforeach; ?>
         <?php endif; ?>

@@ -21,7 +21,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $email     = trim($_POST['email'] ?? '');
         $password  = (string) ($_POST['password'] ?? '');
         $role      = (string) ($_POST['role'] ?? '');
-        $salary    = (float) str_replace(',', '.', ($_POST['salary'] ?? '0'));
 
         if ($full_name === '' || $phone === '' || $email === '' || $password === '' || $role === '') {
             $flash_error = 'Заполните все обязательные поля.';
@@ -29,10 +28,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $flash_error = 'Укажите корректный email.';
         } elseif (strlen($password) < 6) {
             $flash_error = 'Пароль должен содержать не менее 6 символов.';
-        } elseif ($salary < 0) {
-            $flash_error = 'Зарплата не может быть отрицательной.';
         } else {
-            $r = $admin_controller->createEmployee($full_name, $phone, $email, $password, $role, $salary);
+            $r = $admin_controller->createEmployee($full_name, $phone, $email, $password, $role);
             if (!($r['success'] ?? false)) {
                 $flash_error = $r['message'] ?? 'Не удалось добавить сотрудника.';
             } else {
@@ -52,21 +49,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flash_error = $r['message'] ?? 'Не удалось изменить статус.';
             } else {
                 $flash_success = $is_active ? 'Сотрудник активирован.' : 'Сотрудник деактивирован.';
-            }
-        }
-    } elseif ($action === 'update_salary') {
-        $emp_id = (int) ($_POST['employee_id'] ?? 0);
-        $salary = (float) str_replace(',', '.', ($_POST['salary'] ?? '0'));
-        if ($emp_id <= 0) {
-            $flash_error = 'Некорректный сотрудник.';
-        } elseif ($salary < 0) {
-            $flash_error = 'Зарплата не может быть отрицательной.';
-        } else {
-            $r = $admin_controller->setSalary($emp_id, $salary);
-            if (!($r['success'] ?? false)) {
-                $flash_error = $r['message'] ?? 'Не удалось обновить зарплату.';
-            } else {
-                $flash_success = 'Зарплата обновлена.';
             }
         }
     }
@@ -89,7 +71,6 @@ if ($r['success'] ?? false) {
         .emp-row td { vertical-align: middle; }
         .emp-inactive { opacity: 0.55; }
         .inline-form { display: inline; }
-        .salary-input { width: 110px; padding: 6px 8px; font-size: 0.88rem; }
         .btn-sm {
             padding: 5px 12px;
             border: 1px solid var(--border);
@@ -120,7 +101,7 @@ if ($r['success'] ?? false) {
         <?php endif; ?>
 
         <h1 class="sans">Сотрудники</h1>
-        <p class="lead">Управление персоналом: добавление, активация/деактивация, изменение оклада.</p>
+        <p class="lead">Управление персоналом: добавление и активация/деактивация сотрудников.</p>
 
         <!-- Добавление сотрудника -->
         <section class="card">
@@ -147,20 +128,14 @@ if ($r['success'] ?? false) {
                         <input id="password" name="password" type="password" required minlength="6" placeholder="Не менее 6 символов">
                     </div>
                 </div>
-                <div class="row2">
-                    <div class="field">
-                        <label for="role">Роль <span style="color:red;">*</span></label>
-                        <select id="role" name="role" required>
-                            <option value="">Выберите</option>
-                            <?php foreach ($ROLE_LABELS as $val => $lbl): ?>
-                                <option value="<?php echo htmlspecialchars($val); ?>"><?php echo htmlspecialchars($lbl); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="field">
-                        <label for="salary">Оклад (руб.)</label>
-                        <input id="salary" name="salary" type="number" min="0" step="100" value="0" placeholder="0">
-                    </div>
+                <div class="field">
+                    <label for="role">Роль <span style="color:red;">*</span></label>
+                    <select id="role" name="role" required>
+                        <option value="">Выберите</option>
+                        <?php foreach ($ROLE_LABELS as $val => $lbl): ?>
+                            <option value="<?php echo htmlspecialchars($val); ?>"><?php echo htmlspecialchars($lbl); ?></option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
                 <button type="submit" class="btn-submit">Добавить сотрудника</button>
             </form>
@@ -179,10 +154,8 @@ if ($r['success'] ?? false) {
                                 <th>ФИО</th>
                                 <th>Email / Телефон</th>
                                 <th>Роль</th>
-                                <th>Оклад</th>
                                 <th>Статус</th>
                                 <th>Активация</th>
-                                <th>Изменить оклад</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -192,9 +165,6 @@ if ($r['success'] ?? false) {
                                 $is_active = (int) ($emp['is_active'] ?? 0);
                                 $is_self   = ($eid === $admin_id);
                                 $row_class = $is_active ? 'emp-row' : 'emp-row emp-inactive';
-                                $salary_fmt = $emp['salary'] !== null
-                                    ? number_format((float) $emp['salary'], 0, '.', ' ') . ' ₽'
-                                    : '—';
                                 ?>
                                 <tr class="<?php echo $row_class; ?>">
                                     <td>
@@ -210,7 +180,6 @@ if ($r['success'] ?? false) {
                                     <td>
                                         <span class="badge"><?php echo htmlspecialchars($ROLE_LABELS[$emp['role'] ?? ''] ?? ($emp['role'] ?? '')); ?></span>
                                     </td>
-                                    <td><?php echo htmlspecialchars($salary_fmt); ?></td>
                                     <td>
                                         <?php if ($is_active): ?>
                                             <span class="badge badge-ok" style="background:var(--ok-bg);border-color:var(--ok-border);color:var(--ok-text);">Активен</span>
@@ -235,17 +204,6 @@ if ($r['success'] ?? false) {
                                         <?php else: ?>
                                             <span class="hint">—</span>
                                         <?php endif; ?>
-                                    </td>
-                                    <td>
-                                        <form method="post" action="" class="inline-form" style="display:flex;gap:6px;align-items:center;">
-                                            <input type="hidden" name="action" value="update_salary">
-                                            <input type="hidden" name="employee_id" value="<?php echo $eid; ?>">
-                                            <input type="number" name="salary" class="salary-input"
-                                                min="0" step="100"
-                                                value="<?php echo $emp['salary'] !== null ? (float) $emp['salary'] : 0; ?>"
-                                                required>
-                                            <button type="submit" class="btn-sm">Сохранить</button>
-                                        </form>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>

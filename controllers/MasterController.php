@@ -92,7 +92,59 @@ class MasterController extends BaseController
 
         mysqli_commit($this->db);
 
+        $this->history()->log($orderId, Order::STATUS_NEW, Order::STATUS_ASSIGNED, $masterId);
+
         return $this->ok(['message' => empty($normalizedServices) ? 'Механик назначен' : 'Механик назначен, услуги добавлены']);
+    }
+
+    public function reassignMechanic(int $orderId, int $newMechanicId, int $masterId, string $comment = ''): array
+    {
+        $check = $this->requireRole([User::ROLE_MASTER, User::ROLE_ADMIN]);
+        if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
+
+        $order = $this->orders()->findById($orderId);
+        if (!$order) return $this->fail('Заявка не найдена', 404);
+
+        if (in_array($order['status'], [Order::STATUS_COMPLETED, Order::STATUS_CANCELLED], true)) {
+            return $this->fail('Нельзя переназначить механика на завершённую или отменённую заявку');
+        }
+        if (!(int) $order['mechanic_id']) {
+            return $this->fail('На эту заявку ещё не назначен механик. Используйте страницу новых заявок.');
+        }
+        if ((int) $order['mechanic_id'] === $newMechanicId) {
+            return $this->fail('Этот механик уже назначен на заявку');
+        }
+        if (!$this->users()->isActiveMechanic($newMechanicId)) {
+            return $this->fail('Механик не найден или недоступен');
+        }
+
+        $affected = $this->orders()->reassignMechanic($orderId, $newMechanicId);
+        if ($affected < 1) return $this->fail('Не удалось переназначить механика');
+
+        $this->assignments()->create($orderId, $newMechanicId, $masterId, trim($comment));
+
+        return $this->ok(['message' => 'Механик переназначен.']);
+    }
+
+    public function cancelOrder(int $orderId, int $masterId, string $comment): array
+    {
+        $check = $this->requireRole([User::ROLE_MASTER, User::ROLE_ADMIN]);
+        if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
+
+        $order = $this->orders()->findById($orderId);
+        if (!$order) return $this->fail('Заявка не найдена', 404);
+        if ((int) $order['master_id'] !== $masterId) return $this->fail('Эта заявка не закреплена за вами');
+        if ($order['status'] !== Order::STATUS_NEW) return $this->fail('Отменить можно только новую заявку, которой ещё не назначен механик');
+
+        $comment = trim($comment);
+        if ($comment === '') return $this->fail('Укажите причину отмены — клиент её увидит');
+
+        $affected = $this->orders()->cancelByMaster($orderId, $masterId, $comment);
+        if ($affected < 1) return $this->fail('Не удалось отменить заявку');
+
+        $this->history()->log($orderId, Order::STATUS_NEW, Order::STATUS_CANCELLED, $masterId, $comment);
+
+        return $this->ok(['message' => 'Заявка отменена.']);
     }
 
     public function createPartPurchaseRequest(int $orderId, int $partId, int $quantity, int $masterId, ?string $comment = null): array
@@ -115,9 +167,21 @@ class MasterController extends BaseController
         $requestId = $this->purchases()->create($orderId, $partId, $quantity, $masterId, trim((string) ($comment ?? '')));
         if (!$requestId) return $this->fail('Не удалось создать запрос на закупку', 500);
 
-        $this->orders()->setWaitingParts($orderId);
+        if ($order['status'] !== Order::STATUS_WAITING_PARTS) {
+            $this->orders()->setWaitingParts($orderId);
+            $this->history()->log($orderId, $order['status'], Order::STATUS_WAITING_PARTS, $masterId);
+        } else {
+            $this->orders()->setWaitingParts($orderId);
+        }
 
         return $this->ok(['request_id' => $requestId, 'message' => 'Запрос на закупку создан']);
+    }
+
+    public function getMyPurchaseRequests(int $masterId): array
+    {
+        $check = $this->requireRole([User::ROLE_MASTER, User::ROLE_ADMIN]);
+        if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
+        return $this->ok(['requests' => $this->purchases()->getAllByMaster($masterId)]);
     }
 
     public function getPendingPurchaseRequests(): array
@@ -125,6 +189,24 @@ class MasterController extends BaseController
         $check = $this->requireRole([User::ROLE_MASTER, User::ROLE_ADMIN]);
         if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
         return $this->ok(['requests' => $this->purchases()->getPending()]);
+    }
+
+    public function cancelPurchaseRequest(int $requestId, int $masterId): array
+    {
+        $check = $this->requireRole([User::ROLE_MASTER, User::ROLE_ADMIN]);
+        if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
+
+        $orderId = $this->purchases()->deleteIfPendingByMaster($requestId, $masterId);
+        if ($orderId === null) {
+            return $this->fail('Запрос не найден, не принадлежит вам или уже обработан администратором');
+        }
+
+        if (!$this->purchases()->hasPendingForOrder($orderId)) {
+            $this->orders()->updateStatus($orderId, Order::STATUS_IN_PROGRESS);
+            $this->history()->log($orderId, Order::STATUS_WAITING_PARTS, Order::STATUS_IN_PROGRESS, $masterId);
+        }
+
+        return $this->ok(['message' => 'Запрос на закупку отменён. Заявка возвращена в работу.']);
     }
 
     private function normalizeServices(array $raw): array

@@ -1,16 +1,4 @@
 <?php
-/**
- * Генерация системного отчёта в формате Excel (.xlsx).
- * Доступно только администратору.
- *
- * Листы:
- *   1. Сводка           — ключевые показатели системы
- *   2. Заявки           — все заявки с деталями
- *   3. Сотрудники       — персонал с окладами и статусами
- *   4. Запросы закупок  — история запросов на запчасти
- *   5. Зарплатные записи— история начислений
- */
-
 if (session_status() !== PHP_SESSION_ACTIVE) {
     session_start();
 }
@@ -59,13 +47,6 @@ $PURCHASE_STATUS_LABELS = [
     'received' => 'Получен',
 ];
 
-$SALARY_STATUS_LABELS = [
-    'draft'    => 'Черновик',
-    'approved' => 'Утверждена',
-    'paid'     => 'Выплачена',
-    'rejected' => 'Отклонена',
-];
-
 $ROLE_LABELS = [
     'admin'    => 'Администратор',
     'master'   => 'Мастер',
@@ -102,9 +83,6 @@ $stats['active_employees'] = (int)$res->fetch_assoc()['cnt'];
 
 $res = mysqli_query($mysql_connection, "SELECT COUNT(*) AS cnt FROM part_purchase_requests WHERE status='pending'");
 $stats['pending_purchases'] = (int)$res->fetch_assoc()['cnt'];
-
-$res = mysqli_query($mysql_connection, "SELECT COALESCE(SUM(amount),0) AS s FROM salary_records WHERE status='paid'");
-$stats['total_salary_paid'] = (float)$res->fetch_assoc()['s'];
 
 $res = mysqli_query($mysql_connection, "SELECT COUNT(*) AS cnt FROM cars");
 $stats['total_cars'] = (int)$res->fetch_assoc()['cnt'];
@@ -157,19 +135,6 @@ $purchases_res = mysqli_query($mysql_connection, "
 ");
 $purchases = $purchases_res ? $purchases_res->fetch_all(MYSQLI_ASSOC) : [];
 
-// --- 5. Зарплаты ---
-$salary_res = mysqli_query($mysql_connection, "
-    SELECT sr.id, sr.amount, sr.period_start, sr.period_end,
-           sr.status, sr.comment, sr.approved_at, sr.paid_at,
-           u_e.full_name AS employee_name, u_e.role AS employee_role,
-           u_a.full_name AS created_by
-    FROM salary_records sr
-    JOIN users u_e ON u_e.id = sr.employee_id
-    JOIN users u_a ON u_a.id = sr.created_by_admin_id
-    ORDER BY sr.period_start DESC, u_e.full_name
-");
-$salary_records = $salary_res ? $salary_res->fetch_all(MYSQLI_ASSOC) : [];
-
 /* ======================================================================
    Построение XLSX
    ====================================================================== */
@@ -203,7 +168,6 @@ $xlsx->writeRow([cell_s('Активных сотрудников'),             
 $xlsx->writeRow([cell_s(''), cell_s('')]);
 $xlsx->writeRow([cell_s('=== ФИНАНСЫ ==='), cell_s('')]);
 $xlsx->writeRow([cell_s('Запросов на закупку (ожидают)'),      cell_n($stats['pending_purchases'])]);
-$xlsx->writeRow([cell_s('Суммарно выплачено зарплат, ₽'),     cell_m($stats['total_salary_paid'])]);
 
 /* ------ Лист 2: Заявки ------ */
 $xlsx->addSheet('Заявки');
@@ -237,7 +201,7 @@ foreach ($orders as $o) {
 $xlsx->addSheet('Сотрудники');
 $xlsx->writeHeader([
     '№', 'ФИО', 'Роль', 'Email', 'Телефон',
-    'Оклад, ₽', 'Статус', 'Заявок выполнено', 'Дата регистрации',
+    'Статус', 'Заявок выполнено', 'Дата регистрации',
 ]);
 foreach ($employees as $emp) {
     $xlsx->writeRow([
@@ -246,7 +210,6 @@ foreach ($employees as $emp) {
         cell_s($ROLE_LABELS[$emp['role'] ?? ''] ?? ($emp['role'] ?? '')),
         cell_s($emp['email'] ?? ''),
         cell_s($emp['phone'] ?? ''),
-        cell_m($emp['salary'] ?? 0),
         cell_s((int)($emp['is_active'] ?? 0) ? 'Активен' : 'Деактивирован'),
         cell_n($emp['orders_done'] ?? 0),
         cell_s(substr((string)($emp['created_at'] ?? ''), 0, 10)),
@@ -278,29 +241,6 @@ foreach ($purchases as $p) {
         cell_s($p['comment'] ?? ''),
         cell_s($p['created_at'] ?? ''),
         cell_s($p['resolved_at'] ?? ''),
-    ]);
-}
-
-/* ------ Лист 5: Зарплаты ------ */
-$xlsx->addSheet('Зарплатные записи');
-$xlsx->writeHeader([
-    '№', 'Сотрудник', 'Роль', 'Период (с)', 'Период (по)',
-    'Сумма, ₽', 'Статус', 'Создал', 'Комментарий',
-    'Утверждено', 'Выплачено',
-]);
-foreach ($salary_records as $sr) {
-    $xlsx->writeRow([
-        cell_n($sr['id']),
-        cell_s($sr['employee_name'] ?? ''),
-        cell_s($ROLE_LABELS[$sr['employee_role'] ?? ''] ?? ($sr['employee_role'] ?? '')),
-        cell_d($sr['period_start'] ?? ''),
-        cell_d($sr['period_end'] ?? ''),
-        cell_m($sr['amount'] ?? 0),
-        cell_s($SALARY_STATUS_LABELS[$sr['status'] ?? ''] ?? ($sr['status'] ?? '')),
-        cell_s($sr['created_by'] ?? ''),
-        cell_s($sr['comment'] ?? ''),
-        cell_s($sr['approved_at'] ?? ''),
-        cell_s($sr['paid_at'] ?? ''),
     ]);
 }
 

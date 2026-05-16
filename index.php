@@ -123,10 +123,12 @@ $nav_mechanic_section = '';
 $nav_mechanic_index_href = 'pages/mechanic/index.php';
 $nav_mechanic_orders_href = 'pages/mechanic/orders.php';
 $nav_admin_section = '';
-$nav_admin_index_href = 'pages/admin/index.php';
+$nav_admin_index_href     = 'pages/admin/index.php';
+$nav_admin_orders_href    = 'pages/admin/orders.php';
 $nav_admin_employees_href = 'pages/admin/employees.php';
 $nav_admin_purchases_href = 'pages/admin/purchase_requests.php';
-$nav_admin_salary_href = 'pages/admin/salary.php';
+$nav_admin_services_href  = 'pages/admin/services.php';
+$nav_admin_parts_href     = 'pages/admin/parts.php';
 ?>
 <!DOCTYPE html>
 <html lang="ru">
@@ -238,13 +240,15 @@ $nav_admin_salary_href = 'pages/admin/salary.php';
             </p>
         <?php elseif ($is_admin): ?>
             <p class="lead">
-                Вы вошли как администратор. Управляйте сотрудниками, одобряйте закупки запчастей и ведите зарплатные записи.
+                Вы вошли как администратор. Управляйте сотрудниками и одобряйте закупки запчастей.
             </p>
             <p class="sans" style="margin-top: 0; display: flex; flex-wrap: wrap; gap: 10px;">
                 <a class="btn-submit" href="pages/admin/index.php" style="display: inline-block; text-decoration: none;">Панель администратора</a>
+                <a class="btn-submit" href="pages/admin/orders.php" style="display: inline-block; text-decoration: none; background:#fff; color:var(--focus);">Заявки</a>
                 <a class="btn-submit" href="pages/admin/employees.php" style="display: inline-block; text-decoration: none; background:#fff; color:var(--focus);">Сотрудники</a>
                 <a class="btn-submit" href="pages/admin/purchase_requests.php" style="display: inline-block; text-decoration: none; background:#fff; color:var(--focus);">Закупки</a>
-                <a class="btn-submit" href="pages/admin/salary.php" style="display: inline-block; text-decoration: none; background:#fff; color:var(--focus);">Зарплаты</a>
+                <a class="btn-submit" href="pages/admin/services.php" style="display: inline-block; text-decoration: none; background:#fff; color:var(--focus);">Услуги</a>
+                <a class="btn-submit" href="pages/admin/parts.php" style="display: inline-block; text-decoration: none; background:#fff; color:var(--focus);">Запчасти</a>
             </p>
         <?php else: ?>
             <p class="staff lead">

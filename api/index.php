@@ -19,7 +19,6 @@ require_once __DIR__ . '/_helpers.php';
 require_once __DIR__ . '/../config/connect_database.php';
 require_once __DIR__ . '/../models/User.php';
 require_once __DIR__ . '/../models/Order.php';
-require_once __DIR__ . '/../models/SalaryRecord.php';
 require_once __DIR__ . '/../models/PartPurchaseRequest.php';
 require_once __DIR__ . '/../controllers/BaseController.php';
 require_once __DIR__ . '/../controllers/AuthController.php';
@@ -226,8 +225,7 @@ switch ($resource) {
                     trim((string) api_param($b, 'phone',     '')),
                     trim((string) api_param($b, 'email',     '')),
                     (string)      api_param($b, 'password',  ''),
-                    trim((string) api_param($b, 'role',      '')),
-                    (float)       api_param($b, 'salary',    0)
+                    trim((string) api_param($b, 'role',      ''))
                 ), 201);
             } else {
                 api_error('Метод не поддерживается', 405);
@@ -240,17 +238,12 @@ switch ($resource) {
                 trim((string) api_param($b, 'full_name', '')),
                 trim((string) api_param($b, 'phone',     '')),
                 trim((string) api_param($b, 'email',     '')),
-                trim((string) api_param($b, 'role',      '')),
-                (float)       api_param($b, 'salary',    0)
+                trim((string) api_param($b, 'role',      ''))
             ));
         } elseif ($id > 0 && $seg2 === 'active') {
             if ($method !== 'PATCH') api_error('Метод не поддерживается', 405);
             $b = api_body();
             api_from_controller($admin->setEmployeeActive($id, (bool) api_param($b, 'is_active', true)));
-        } elseif ($id > 0 && $seg2 === 'salary') {
-            if ($method !== 'PATCH') api_error('Метод не поддерживается', 405);
-            $b = api_body();
-            api_from_controller($admin->setSalary($id, (float) api_param($b, 'salary', 0)));
         } else {
             api_error('Маршрут не найден', 404);
         }
@@ -288,54 +281,6 @@ switch ($resource) {
                 (int)    $user['id'],
                 (bool)   api_param($b, 'approve', false),
                 (string) api_param($b, 'comment', '')
-            ));
-        } else {
-            api_error('Маршрут не найден', 404);
-        }
-        break;
-
-    case 'salary':
-        if ($seg1 === '') {
-            if ($method === 'GET') {
-                api_from_controller($admin->getSalaryByPeriods());
-            } elseif ($method === 'POST') {
-                $b = api_body();
-                $user = api_require_auth();
-                api_from_controller($admin->createSalaryRecord(
-                    (int)    api_param($b, 'employee_id',  0),
-                    (float)  api_param($b, 'amount',       0),
-                    (string) api_param($b, 'period_start', ''),
-                    (string) api_param($b, 'period_end',   ''),
-                    (int)    $user['id'],
-                    (string) api_param($b, 'comment',      '')
-                ), 201);
-            } else {
-                api_error('Метод не поддерживается', 405);
-            }
-        } elseif ($seg1 === 'generate' && $seg2 === '') {
-            if ($method !== 'POST') api_error('Метод не поддерживается', 405);
-            $user = api_require_auth();
-            $b    = api_body();
-            api_from_controller($admin->generatePayroll(
-                (string) api_param($b, 'period_start', ''),
-                (string) api_param($b, 'period_end',   ''),
-                (int)    $user['id']
-            ), 201);
-        } elseif ($seg1 === 'bulk-status' && $seg2 === '') {
-            if ($method !== 'POST') api_error('Метод не поддерживается', 405);
-            $b = api_body();
-            api_from_controller($admin->bulkSetSalaryStatus(
-                (string) api_param($b, 'period_start', ''),
-                (string) api_param($b, 'period_end',   ''),
-                (string) api_param($b, 'from_status',  ''),
-                (string) api_param($b, 'to_status',    '')
-            ));
-        } elseif ($id > 0 && $seg2 === 'status') {
-            if ($method !== 'PATCH') api_error('Метод не поддерживается', 405);
-            $b = api_body();
-            api_from_controller($admin->setSalaryRecordStatus(
-                $id,
-                (string) api_param($b, 'status', '')
             ));
         } else {
             api_error('Маршрут не найден', 404);

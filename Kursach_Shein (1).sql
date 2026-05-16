@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Хост: 127.0.0.1:3306
--- Время создания: Май 12 2026 г., 18:50
+-- Время создания: Май 15 2026 г., 12:00
 -- Версия сервера: 8.0.30
 -- Версия PHP: 8.1.9
 
@@ -90,6 +90,8 @@ CREATE TABLE `orders` (
   `end_date` datetime DEFAULT NULL,
   `status` enum('new','assigned','in_progress','waiting_parts','completed','cancelled') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'new',
   `description` text COLLATE utf8mb4_unicode_ci,
+  `parts_comment` text COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `cancel_comment` text COLLATE utf8mb4_unicode_ci DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -97,11 +99,34 @@ CREATE TABLE `orders` (
 -- Дамп данных таблицы `orders`
 --
 
-INSERT INTO `orders` (`id`, `client_id`, `car_id`, `mechanic_id`, `master_id`, `total_price`, `start_date`, `end_date`, `status`, `description`, `created_at`) VALUES
-(1, 5, 1, 3, 2, '4300.00', '2026-05-08 10:00:00', NULL, 'in_progress', 'Плановое ТО + диагностика', '2026-05-09 08:28:05'),
-(2, 6, 2, 4, 2, '3200.00', '2026-05-09 09:30:00', NULL, 'waiting_parts', 'Нужна замена передних колодок', '2026-05-09 08:28:05'),
-(3, 7, 3, 3, 2, '0.00', NULL, NULL, 'completed', 'Нужна диагностика', '2026-05-10 07:29:10'),
-(4, 7, 3, 3, 2, '2500.00', NULL, NULL, 'completed', 'что-то не понятное', '2026-05-11 10:48:43');
+INSERT INTO `orders` (`id`, `client_id`, `car_id`, `mechanic_id`, `master_id`, `total_price`, `start_date`, `end_date`, `status`, `description`, `parts_comment`, `cancel_comment`, `created_at`) VALUES
+(1, 5, 1, 3, 2, '4300.00', '2026-05-08 10:00:00', NULL, 'in_progress', 'Плановое ТО + диагностика', NULL, NULL, '2026-05-09 08:28:05'),
+(2, 6, 2, 4, 2, '3200.00', '2026-05-09 09:30:00', NULL, 'waiting_parts', 'Нужна замена передних колодок', NULL, NULL, '2026-05-09 08:28:05'),
+(3, 7, 3, 3, 2, '0.00', NULL, NULL, 'completed', 'Нужна диагностика', NULL, NULL, '2026-05-10 07:29:10'),
+(4, 7, 3, 3, 2, '2500.00', NULL, NULL, 'completed', 'что-то не понятное', NULL, NULL, '2026-05-11 10:48:43');
+
+-- --------------------------------------------------------
+
+--
+-- Структура таблицы `order_parts`
+--
+
+CREATE TABLE `order_parts` (
+  `id` int UNSIGNED NOT NULL,
+  `order_id` int UNSIGNED NOT NULL,
+  `part_id` int UNSIGNED NOT NULL,
+  `quantity` int UNSIGNED NOT NULL DEFAULT '1',
+  `price_each` decimal(10,2) NOT NULL DEFAULT '0.00',
+  `note` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `added_by_mechanic_id` int UNSIGNED DEFAULT NULL,
+  `added_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+--
+-- Дамп данных таблицы `order_parts`
+--
+
+-- (нет данных)
 
 -- --------------------------------------------------------
 
@@ -131,6 +156,28 @@ INSERT INTO `order_services` (`id`, `order_id`, `service_id`, `quantity`, `comme
 -- --------------------------------------------------------
 
 --
+-- Структура таблицы `order_status_history`
+--
+
+CREATE TABLE `order_status_history` (
+  `id` int UNSIGNED NOT NULL,
+  `order_id` int UNSIGNED NOT NULL,
+  `old_status` varchar(30) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `new_status` varchar(30) COLLATE utf8mb4_unicode_ci NOT NULL,
+  `changed_by_user_id` int UNSIGNED NOT NULL,
+  `note` text COLLATE utf8mb4_unicode_ci DEFAULT NULL,
+  `changed_at` datetime NOT NULL DEFAULT CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+--
+-- Дамп данных таблицы `order_status_history`
+--
+
+-- (нет данных)
+
+-- --------------------------------------------------------
+
+--
 -- Структура таблицы `parts`
 --
 
@@ -140,8 +187,6 @@ CREATE TABLE `parts` (
   `article` varchar(80) COLLATE utf8mb4_unicode_ci NOT NULL,
   `price` decimal(10,2) NOT NULL,
   `quantity` int UNSIGNED NOT NULL DEFAULT '0',
-  `reserved_quantity` int UNSIGNED NOT NULL DEFAULT '0',
-  `min_quantity` int UNSIGNED NOT NULL DEFAULT '0',
   `description` text COLLATE utf8mb4_unicode_ci,
   `image` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -150,10 +195,10 @@ CREATE TABLE `parts` (
 -- Дамп данных таблицы `parts`
 --
 
-INSERT INTO `parts` (`id`, `name`, `article`, `price`, `quantity`, `reserved_quantity`, `min_quantity`, `description`, `image`) VALUES
-(1, 'Масляный фильтр', 'OF-001', '650.00', 25, 2, 5, 'Фильтр для ТО', NULL),
-(2, 'Моторное масло 5W-30 (1л)', 'OIL-530-1L', '900.00', 60, 10, 20, 'Синтетическое масло', NULL),
-(3, 'Тормозные колодки передние', 'BP-FRONT-01', '2500.00', 4, 1, 3, 'Комплект передних колодок', NULL);
+INSERT INTO `parts` (`id`, `name`, `article`, `price`, `quantity`, `description`, `image`) VALUES
+(1, 'Масляный фильтр', 'OF-001', '650.00', 25, 'Фильтр для ТО', NULL),
+(2, 'Моторное масло 5W-30 (1л)', 'OIL-530-1L', '900.00', 60, 'Синтетическое масло', NULL),
+(3, 'Тормозные колодки передние', 'BP-FRONT-01', '2500.00', 4, 'Комплект передних колодок', NULL);
 
 -- --------------------------------------------------------
 
@@ -166,7 +211,8 @@ CREATE TABLE `part_purchase_requests` (
   `order_id` int UNSIGNED NOT NULL,
   `part_id` int UNSIGNED NOT NULL,
   `quantity` int UNSIGNED NOT NULL,
-  `requested_by_master_id` int UNSIGNED NOT NULL,
+  `requested_by_master_id` int UNSIGNED DEFAULT NULL,
+  `requested_by_mechanic_id` int UNSIGNED DEFAULT NULL,
   `approved_by_admin_id` int UNSIGNED DEFAULT NULL,
   `status` enum('pending','approved','rejected','ordered','received') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'pending',
   `comment` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
@@ -178,36 +224,8 @@ CREATE TABLE `part_purchase_requests` (
 -- Дамп данных таблицы `part_purchase_requests`
 --
 
-INSERT INTO `part_purchase_requests` (`id`, `order_id`, `part_id`, `quantity`, `requested_by_master_id`, `approved_by_admin_id`, `status`, `comment`, `created_at`, `resolved_at`) VALUES
-(1, 2, 3, 2, 2, 1, 'approved', 'Низкий остаток на складе', '2026-05-09 10:20:00', '2026-05-09 11:05:00');
-
--- --------------------------------------------------------
-
---
--- Структура таблицы `salary_records`
---
-
-CREATE TABLE `salary_records` (
-  `id` int UNSIGNED NOT NULL,
-  `employee_id` int UNSIGNED NOT NULL,
-  `amount` decimal(10,2) NOT NULL,
-  `period_start` date NOT NULL,
-  `period_end` date NOT NULL,
-  `status` enum('draft','approved','paid','rejected') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'draft',
-  `comment` varchar(255) COLLATE utf8mb4_unicode_ci DEFAULT NULL,
-  `created_by_admin_id` int UNSIGNED NOT NULL,
-  `approved_at` datetime DEFAULT NULL,
-  `paid_at` datetime DEFAULT NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
---
--- Дамп данных таблицы `salary_records`
---
-
-INSERT INTO `salary_records` (`id`, `employee_id`, `amount`, `period_start`, `period_end`, `status`, `comment`, `created_by_admin_id`, `approved_at`, `paid_at`) VALUES
-(1, 3, '70000.00', '2026-04-01', '2026-04-30', 'paid', 'Оклад за апрель', 1, '2026-05-01 12:00:00', '2026-05-05 15:00:00'),
-(2, 4, '72000.00', '2026-04-01', '2026-04-30', 'approved', 'Оклад за апрель', 1, '2026-05-01 12:10:00', NULL),
-(3, 2, '90000.00', '2026-04-01', '2026-04-30', 'draft', 'На согласовании', 1, NULL, NULL);
+INSERT INTO `part_purchase_requests` (`id`, `order_id`, `part_id`, `quantity`, `requested_by_master_id`, `requested_by_mechanic_id`, `approved_by_admin_id`, `status`, `comment`, `created_at`, `resolved_at`) VALUES
+(1, 2, 3, 2, 2, NULL, 1, 'approved', 'Низкий остаток на складе', '2026-05-09 10:20:00', '2026-05-09 11:05:00');
 
 -- --------------------------------------------------------
 
@@ -268,7 +286,6 @@ CREATE TABLE `users` (
   `email` varchar(150) COLLATE utf8mb4_unicode_ci NOT NULL,
   `role` enum('client','mechanic','master','admin') COLLATE utf8mb4_unicode_ci NOT NULL DEFAULT 'client',
   `password` varchar(255) COLLATE utf8mb4_unicode_ci NOT NULL,
-  `salary` decimal(10,2) DEFAULT NULL,
   `is_active` tinyint(1) NOT NULL DEFAULT '1',
   `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
@@ -277,14 +294,14 @@ CREATE TABLE `users` (
 -- Дамп данных таблицы `users`
 --
 
-INSERT INTO `users` (`id`, `full_name`, `phone`, `email`, `role`, `password`, `salary`, `is_active`, `created_at`) VALUES
-(1, 'Супер Админ', '+79990000001', 'admin@service.local', 'admin', '$2y$10$elXXUNzxALWT24729nWfce9NN4RJJ9oRVjAqdNex26t1LW3IwZ0fq', '120000.00', 1, '2026-05-09 08:28:04'),
-(2, 'Иван Мастер', '+79990000002', 'master@service.local', 'master', '$2y$10$9vY6ygfzwAegh2DtxQAZZuiyjD4s9ycSb7MBGmHyzXJd./l80i12S', '90000.00', 1, '2026-05-09 08:28:04'),
-(3, 'Петр Механик', '+79990000003', 'mechanic1@service.local', 'mechanic', '$2y$10$9vY6ygfzwAegh2DtxQAZZuiyjD4s9ycSb7MBGmHyzXJd./l80i12S', '70000.00', 1, '2026-05-09 08:28:04'),
-(4, 'Сергей Механик', '+79990000004', 'mechanic2@service.local', 'mechanic', '$2y$10$9vY6ygfzwAegh2DtxQAZZuiyjD4s9ycSb7MBGmHyzXJd./l80i12S', '72000.00', 1, '2026-05-09 08:28:04'),
-(5, 'Алексей Клиент', '+79990000005', 'client1@mail.local', 'client', '$2y$10$9vY6ygfzwAegh2DtxQAZZuiyjD4s9ycSb7MBGmHyzXJd./l80i12S', NULL, 1, '2026-05-09 08:28:04'),
-(6, 'Мария Клиент', '+79990000006', 'client2@mail.local', 'client', '$2y$10$9vY6ygfzwAegh2DtxQAZZuiyjD4s9ycSb7MBGmHyzXJd./l80i12S', NULL, 1, '2026-05-09 08:28:04'),
-(7, 'Роберт Шейн', '89999999999', 'robert@gmail.com', 'client', '$2y$10$9vY6ygfzwAegh2DtxQAZZuiyjD4s9ycSb7MBGmHyzXJd./l80i12S', NULL, 1, '2026-05-09 08:44:24');
+INSERT INTO `users` (`id`, `full_name`, `phone`, `email`, `role`, `password`, `is_active`, `created_at`) VALUES
+(1, 'Супер Админ', '+79990000001', 'admin@service.local', 'admin', '$2y$10$elXXUNzxALWT24729nWfce9NN4RJJ9oRVjAqdNex26t1LW3IwZ0fq', 1, '2026-05-09 08:28:04'),
+(2, 'Иван Мастер', '+79990000002', 'master@service.local', 'master', '$2y$10$9vY6ygfzwAegh2DtxQAZZuiyjD4s9ycSb7MBGmHyzXJd./l80i12S', 1, '2026-05-09 08:28:04'),
+(3, 'Петр Механик', '+79990000003', 'mechanic1@service.local', 'mechanic', '$2y$10$9vY6ygfzwAegh2DtxQAZZuiyjD4s9ycSb7MBGmHyzXJd./l80i12S', 1, '2026-05-09 08:28:04'),
+(4, 'Сергей Механик', '+79990000004', 'mechanic2@service.local', 'mechanic', '$2y$10$9vY6ygfzwAegh2DtxQAZZuiyjD4s9ycSb7MBGmHyzXJd./l80i12S', 1, '2026-05-09 08:28:04'),
+(5, 'Алексей Клиент', '+79990000005', 'client1@mail.local', 'client', '$2y$10$9vY6ygfzwAegh2DtxQAZZuiyjD4s9ycSb7MBGmHyzXJd./l80i12S', 1, '2026-05-09 08:28:04'),
+(6, 'Мария Клиент', '+79990000006', 'client2@mail.local', 'client', '$2y$10$9vY6ygfzwAegh2DtxQAZZuiyjD4s9ycSb7MBGmHyzXJd./l80i12S', 1, '2026-05-09 08:28:04'),
+(7, 'Роберт Шейн', '89999999999', 'robert@gmail.com', 'client', '$2y$10$9vY6ygfzwAegh2DtxQAZZuiyjD4s9ycSb7MBGmHyzXJd./l80i12S', 1, '2026-05-09 08:44:24');
 
 --
 -- Индексы сохранённых таблиц
@@ -318,12 +335,29 @@ ALTER TABLE `orders`
   ADD KEY `idx_orders_master_id` (`master_id`);
 
 --
+-- Индексы таблицы `order_parts`
+--
+ALTER TABLE `order_parts`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_op_order_id` (`order_id`),
+  ADD KEY `fk_op_part` (`part_id`),
+  ADD KEY `fk_op_mechanic` (`added_by_mechanic_id`);
+
+--
 -- Индексы таблицы `order_services`
 --
 ALTER TABLE `order_services`
   ADD PRIMARY KEY (`id`),
   ADD KEY `fk_order_services_order` (`order_id`),
   ADD KEY `fk_order_services_service` (`service_id`);
+
+--
+-- Индексы таблицы `order_status_history`
+--
+ALTER TABLE `order_status_history`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_osh_order_id` (`order_id`),
+  ADD KEY `fk_osh_user` (`changed_by_user_id`);
 
 --
 -- Индексы таблицы `parts`
@@ -340,15 +374,8 @@ ALTER TABLE `part_purchase_requests`
   ADD KEY `idx_ppr_order_id` (`order_id`),
   ADD KEY `fk_ppr_part` (`part_id`),
   ADD KEY `fk_ppr_master` (`requested_by_master_id`),
+  ADD KEY `fk_ppr_mechanic` (`requested_by_mechanic_id`),
   ADD KEY `fk_ppr_admin` (`approved_by_admin_id`);
-
---
--- Индексы таблицы `salary_records`
---
-ALTER TABLE `salary_records`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `idx_salary_employee_id` (`employee_id`),
-  ADD KEY `fk_salary_admin` (`created_by_admin_id`);
 
 --
 -- Индексы таблицы `services`
@@ -394,10 +421,22 @@ ALTER TABLE `orders`
   MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
+-- AUTO_INCREMENT для таблицы `order_parts`
+--
+ALTER TABLE `order_parts`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
+
+--
 -- AUTO_INCREMENT для таблицы `order_services`
 --
 ALTER TABLE `order_services`
   MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+
+--
+-- AUTO_INCREMENT для таблицы `order_status_history`
+--
+ALTER TABLE `order_status_history`
+  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=1;
 
 --
 -- AUTO_INCREMENT для таблицы `parts`
@@ -410,12 +449,6 @@ ALTER TABLE `parts`
 --
 ALTER TABLE `part_purchase_requests`
   MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
-
---
--- AUTO_INCREMENT для таблицы `salary_records`
---
-ALTER TABLE `salary_records`
-  MODIFY `id` int UNSIGNED NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT для таблицы `services`
@@ -463,6 +496,14 @@ ALTER TABLE `orders`
   ADD CONSTRAINT `fk_orders_mechanic` FOREIGN KEY (`mechanic_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 --
+-- Ограничения внешнего ключа таблицы `order_parts`
+--
+ALTER TABLE `order_parts`
+  ADD CONSTRAINT `fk_op_mechanic` FOREIGN KEY (`added_by_mechanic_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_op_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_op_part` FOREIGN KEY (`part_id`) REFERENCES `parts` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+--
 -- Ограничения внешнего ключа таблицы `order_services`
 --
 ALTER TABLE `order_services`
@@ -470,20 +511,21 @@ ALTER TABLE `order_services`
   ADD CONSTRAINT `fk_order_services_service` FOREIGN KEY (`service_id`) REFERENCES `services` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 --
+-- Ограничения внешнего ключа таблицы `order_status_history`
+--
+ALTER TABLE `order_status_history`
+  ADD CONSTRAINT `fk_osh_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_osh_user` FOREIGN KEY (`changed_by_user_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
+
+--
 -- Ограничения внешнего ключа таблицы `part_purchase_requests`
 --
 ALTER TABLE `part_purchase_requests`
   ADD CONSTRAINT `fk_ppr_admin` FOREIGN KEY (`approved_by_admin_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
-  ADD CONSTRAINT `fk_ppr_master` FOREIGN KEY (`requested_by_master_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_ppr_master` FOREIGN KEY (`requested_by_master_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_ppr_mechanic` FOREIGN KEY (`requested_by_mechanic_id`) REFERENCES `users` (`id`) ON DELETE SET NULL ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_ppr_order` FOREIGN KEY (`order_id`) REFERENCES `orders` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
   ADD CONSTRAINT `fk_ppr_part` FOREIGN KEY (`part_id`) REFERENCES `parts` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
-
---
--- Ограничения внешнего ключа таблицы `salary_records`
---
-ALTER TABLE `salary_records`
-  ADD CONSTRAINT `fk_salary_admin` FOREIGN KEY (`created_by_admin_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE,
-  ADD CONSTRAINT `fk_salary_employee` FOREIGN KEY (`employee_id`) REFERENCES `users` (`id`) ON DELETE RESTRICT ON UPDATE CASCADE;
 
 --
 -- Ограничения внешнего ключа таблицы `service_parts`

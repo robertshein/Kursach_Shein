@@ -39,6 +39,8 @@ class ClientController extends BaseController
 
         mysqli_commit($this->db);
 
+        $this->history()->log($orderId, null, Order::STATUS_NEW, $clientId);
+
         return $this->ok([
             'order_id'    => $orderId,
             'master_id'   => $masterId,
@@ -115,6 +117,41 @@ class ClientController extends BaseController
         }
 
         return $this->ok(['message' => 'Данные сохранены', 'full_name' => $fullName, 'phone' => $phone, 'email' => $email]);
+    }
+
+    public function cancelOrder(int $clientId, int $orderId): array
+    {
+        $check = $this->requireRole([User::ROLE_CLIENT]);
+        if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
+
+        $order = $this->orders()->findById($orderId);
+        if (!$order || (int) $order['client_id'] !== $clientId) {
+            return $this->fail('Заявка не найдена.', 404);
+        }
+        if ($order['status'] !== Order::STATUS_NEW) {
+            return $this->fail('Отменить можно только новую заявку, которую мастер ещё не принял в работу.');
+        }
+
+        $this->orders()->updateStatus($orderId, Order::STATUS_CANCELLED);
+        $this->history()->log($orderId, Order::STATUS_NEW, Order::STATUS_CANCELLED, $clientId);
+        return $this->ok(['message' => 'Заявка отменена.']);
+    }
+
+    public function getOrderComposition(int $clientId): array
+    {
+        $check = $this->requireRole([User::ROLE_CLIENT]);
+        if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
+        return $this->ok([
+            'services' => $this->orders()->getServicesForClientOrders($clientId),
+            'parts'    => $this->orders()->getPartsForClientOrders($clientId),
+        ]);
+    }
+
+    public function getOrderHistory(int $clientId): array
+    {
+        $check = $this->requireRole([User::ROLE_CLIENT]);
+        if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
+        return $this->ok(['history' => $this->history()->getForClientOrders($clientId)]);
     }
 
     public function carHasActiveOrder(int $carId): bool   { return $this->orders()->carHasActiveOrder($carId); }

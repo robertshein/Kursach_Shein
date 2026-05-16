@@ -98,6 +98,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $flash_success = $r['data']['message'] ?? 'Описание сохранено.';
             }
         }
+    } elseif ($action === 'cancel_order') {
+        $order_id = (int) ($_POST['order_id'] ?? 0);
+        if ($order_id <= 0) {
+            $flash_error = 'Некорректная заявка.';
+        } else {
+            $r = $client_controller->cancelOrder($client_id, $order_id);
+            if (!($r['success'] ?? false)) {
+                $flash_error = $r['message'] ?? 'Не удалось отменить заявку.';
+            } else {
+                $flash_success = $r['data']['message'] ?? 'Заявка отменена.';
+            }
+        }
     } elseif ($action === 'update_car') {
         $car_id = (int) ($_POST['car_id'] ?? 0);
         $vin = trim($_POST['vin'] ?? '');
@@ -140,6 +152,28 @@ foreach ($orders as $o) {
     }
 }
 
+/* Состав заявок (услуги + запчасти) — загружаем двумя запросами, группируем по order_id */
+$orders_services = [];
+$orders_parts    = [];
+$comp_r = $client_controller->getOrderComposition($client_id);
+if ($comp_r['success'] ?? false) {
+    foreach ($comp_r['data']['services'] ?? [] as $row) {
+        $orders_services[(int) $row['order_id']][] = $row;
+    }
+    foreach ($comp_r['data']['parts'] ?? [] as $row) {
+        $orders_parts[(int) $row['order_id']][] = $row;
+    }
+}
+
+/* История статусов — загружаем один раз, группируем по order_id */
+$orders_history = [];
+$history_r = $client_controller->getOrderHistory($client_id);
+if ($history_r['success'] ?? false) {
+    foreach ($history_r['data']['history'] ?? [] as $h) {
+        $orders_history[(int) $h['order_id']][] = $h;
+    }
+}
+
 $nav_active = 'cabinet';
 $nav_home_href = '../index.php';
 $nav_cabinet_href = 'cabinet.php';
@@ -153,6 +187,62 @@ $nav_show_cabinet = true;
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Личный кабинет</title>
     <?php include __DIR__ . '/../includes/layout_styles.php'; ?>
+    <style>
+        .btn-sm-danger {
+            padding: 4px 12px;
+            border: 1px solid var(--danger-border);
+            border-radius: 4px;
+            background: #fff;
+            color: var(--danger-text);
+            font-size: 0.82rem;
+            font-weight: 600;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .btn-sm-danger:hover { background: var(--danger-bg); }
+
+        .order-history { margin-top: 6px; }
+        .order-history summary {
+            cursor: pointer; font-size: 0.78rem; color: var(--focus);
+            font-weight: 600; user-select: none; list-style: none;
+        }
+        .order-history summary::-webkit-details-marker { display: none; }
+        .order-history summary::before { content: '▶ '; font-size: 0.65rem; }
+        .order-history[open] summary::before { content: '▼ '; }
+        .history-timeline { list-style: none; margin: 6px 0 0; padding: 0; }
+        .history-timeline li {
+            display: flex; gap: 6px; align-items: flex-start;
+            font-size: 0.78rem; padding: 3px 0;
+            border-left: 2px solid var(--focus); margin-left: 4px; padding-left: 8px;
+            color: #374151;
+        }
+        .history-timeline li:last-child { border-left-color: transparent; }
+        .history-timeline .ht-date { color: #9ca3af; white-space: nowrap; flex-shrink: 0; }
+        .history-timeline .ht-status { font-weight: 600; }
+        .history-timeline .ht-actor { color: #6b7280; }
+        .history-timeline .ht-note { color: #b91c1c; font-style: italic; }
+
+        .order-composition { margin-top: 8px; }
+        .order-composition summary {
+            cursor: pointer; font-size: 0.78rem; color: #059669;
+            font-weight: 600; user-select: none; list-style: none;
+        }
+        .order-composition summary::-webkit-details-marker { display: none; }
+        .order-composition summary::before { content: '▶ '; font-size: 0.65rem; }
+        .order-composition[open] summary::before { content: '▼ '; }
+        .comp-section { margin-top: 6px; }
+        .comp-section h4 { margin: 0 0 4px; font-size: 0.78rem; text-transform: uppercase;
+                           letter-spacing: .04em; color: #6b7280; }
+        .comp-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        .comp-table th, .comp-table td {
+            padding: 3px 8px; text-align: left;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .comp-table th { color: #9ca3af; font-weight: 600; }
+        .comp-table tr:last-child td { border-bottom: none; }
+        .comp-total { font-size: 0.8rem; font-weight: 700; text-align: right;
+                      margin-top: 4px; color: #111827; }
+    </style>
 </head>
 <body>
     <?php include __DIR__ . '/../includes/site_nav.php'; ?>
@@ -215,6 +305,7 @@ $nav_show_cabinet = true;
                                 <th>Статус</th>
                                 <th>Механик</th>
                                 <th>Сумма</th>
+                                <th></th>
                             </tr>
                         </thead>
                         <tbody>
@@ -239,6 +330,7 @@ $nav_show_cabinet = true;
                                     ? (mb_strlen($desc) > 100 ? mb_substr($desc, 0, 100) . '…' : $desc)
                                     : (strlen($desc) > 100 ? substr($desc, 0, 100) . '…' : $desc);
                                 $can_edit_order_desc = ($st === Order::STATUS_NEW);
+                                $can_cancel = ($st === Order::STATUS_NEW);
                                 ?>
                                 <tr>
                                     <td><?php echo (int) ($o['id'] ?? 0); ?></td>
@@ -257,10 +349,132 @@ $nav_show_cabinet = true;
                                         <?php elseif ($desc !== ''): ?>
                                             <div class="hint" style="max-width: 280px;"><?php echo htmlspecialchars($desc_short); ?></div>
                                         <?php endif; ?>
+
+                                        <?php
+                                        $oid_c    = (int) ($o['id'] ?? 0);
+                                        $svc_rows = $orders_services[$oid_c] ?? [];
+                                        $prt_rows = $orders_parts[$oid_c]    ?? [];
+                                        if (!empty($svc_rows) || !empty($prt_rows)):
+                                            $svc_total = array_sum(array_map(fn($r) => (float)$r['price'] * (int)$r['quantity'], $svc_rows));
+                                            $prt_total = array_sum(array_map(fn($r) => (float)$r['price'] * (int)$r['quantity'], $prt_rows));
+                                            $grand_total = $svc_total + $prt_total;
+                                        ?>
+                                        <details class="order-composition">
+                                            <summary>Состав заявки</summary>
+
+                                            <?php if (!empty($svc_rows)): ?>
+                                            <div class="comp-section">
+                                                <h4>Услуги</h4>
+                                                <table class="comp-table">
+                                                    <thead>
+                                                        <tr><th>Наименование</th><th>Кол-во</th><th>Цена</th><th>Сумма</th></tr>
+                                                    </thead>
+                                                    <tbody>
+                                                    <?php foreach ($svc_rows as $sr): ?>
+                                                        <?php $line = (float)$sr['price'] * (int)$sr['quantity']; ?>
+                                                        <tr>
+                                                            <td>
+                                                                <?php echo htmlspecialchars($sr['name'] ?? ''); ?>
+                                                                <?php if (!empty($sr['comment'])): ?>
+                                                                    <span style="color:#9ca3af"> — <?php echo htmlspecialchars($sr['comment']); ?></span>
+                                                                <?php endif; ?>
+                                                            </td>
+                                                            <td><?php echo (int)$sr['quantity']; ?></td>
+                                                            <td><?php echo number_format((float)$sr['price'], 0, '.', ' '); ?> ₽</td>
+                                                            <td><?php echo number_format($line, 0, '.', ' '); ?> ₽</td>
+                                                        </tr>
+                                                    <?php endforeach; ?>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                            <?php endif; ?>
+
+                                            <?php if (!empty($prt_rows)): ?>
+                                            <div class="comp-section">
+                                                <h4>Запчасти</h4>
+                                                <table class="comp-table">
+                                                    <thead>
+                                                        <tr><th>Наименование</th><th>Артикул</th><th>Кол-во</th><th>Цена</th><th>Сумма</th></tr>
+                                                    </thead>
+                                                    <tbody>
+                                                    <?php foreach ($prt_rows as $pr): ?>
+                                                        <?php $line = (float)$pr['price'] * (int)$pr['quantity']; ?>
+                                                        <tr>
+                                                            <td>
+                                                                <?php echo htmlspecialchars($pr['name'] ?? ''); ?>
+                                                                <?php if (!empty($pr['note'])): ?>
+                                                                    <span style="color:#9ca3af"> — <?php echo htmlspecialchars($pr['note']); ?></span>
+                                                                <?php endif; ?>
+                                                            </td>
+                                                            <td style="color:#9ca3af"><?php echo htmlspecialchars($pr['article'] ?? ''); ?></td>
+                                                            <td><?php echo (int)$pr['quantity']; ?></td>
+                                                            <td><?php echo number_format((float)$pr['price'], 0, '.', ' '); ?> ₽</td>
+                                                            <td><?php echo number_format($line, 0, '.', ' '); ?> ₽</td>
+                                                        </tr>
+                                                    <?php endforeach; ?>
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                            <?php endif; ?>
+
+                                            <div class="comp-total">
+                                                Итого: <?php echo number_format($grand_total, 0, '.', ' '); ?> ₽
+                                            </div>
+                                        </details>
+                                        <?php endif; ?>
                                     </td>
-                                    <td><span class="<?php echo $badge_class; ?>"><?php echo htmlspecialchars(cabinet_order_status_label($st, $ORDER_STATUS_LABELS)); ?></span></td>
+                                    <td>
+                                        <span class="<?php echo $badge_class; ?>"><?php echo htmlspecialchars(cabinet_order_status_label($st, $ORDER_STATUS_LABELS)); ?></span>
+                                        <?php if ($st === Order::STATUS_CANCELLED && !empty($o['cancel_comment'])): ?>
+                                            <div class="hint" style="margin-top:4px; color:#b91c1c; max-width:240px;">
+                                                <?php echo nl2br(htmlspecialchars((string) $o['cancel_comment'])); ?>
+                                            </div>
+                                        <?php endif; ?>
+                                        <?php
+                                        $oid_h = (int) ($o['id'] ?? 0);
+                                        $hist  = $orders_history[$oid_h] ?? [];
+                                        if (!empty($hist)):
+                                        ?>
+                                        <details class="order-history">
+                                            <summary>История (<?php echo count($hist); ?>)</summary>
+                                            <ul class="history-timeline">
+                                                <?php foreach ($hist as $h): ?>
+                                                    <?php
+                                                    $role_lbl = \OrderStatusHistoryContext::roleLabel($h['changed_by_role'] ?? '');
+                                                    $new_lbl  = \OrderStatusHistoryContext::statusLabel($h['new_status'] ?? '');
+                                                    $date_lbl = $h['changed_at']
+                                                        ? date('d.m.Y H:i', strtotime($h['changed_at']))
+                                                        : '';
+                                                    ?>
+                                                    <li>
+                                                        <span class="ht-date"><?php echo htmlspecialchars($date_lbl); ?></span>
+                                                        <span>
+                                                            <span class="ht-status"><?php echo htmlspecialchars($new_lbl); ?></span>
+                                                            <span class="ht-actor"> — <?php echo htmlspecialchars($role_lbl); ?></span>
+                                                            <?php if (!empty($h['note'])): ?>
+                                                                <br><span class="ht-note"><?php echo htmlspecialchars((string) $h['note']); ?></span>
+                                                            <?php endif; ?>
+                                                        </span>
+                                                    </li>
+                                                <?php endforeach; ?>
+                                            </ul>
+                                        </details>
+                                        <?php endif; ?>
+                                    </td>
                                     <td><?php echo !empty($o['mechanic_name']) ? htmlspecialchars($o['mechanic_name']) : '—'; ?></td>
                                     <td><?php echo htmlspecialchars($price); ?></td>
+                                    <td>
+                                        <?php if ($can_cancel): ?>
+                                            <form method="post" action="" style="display:inline;">
+                                                <input type="hidden" name="action"   value="cancel_order">
+                                                <input type="hidden" name="order_id" value="<?php echo (int) ($o['id'] ?? 0); ?>">
+                                                <button type="submit" class="btn-sm-danger"
+                                                    onclick="return confirm('Отменить заявку #<?php echo (int) ($o['id'] ?? 0); ?>? Это действие необратимо.')">
+                                                    Отменить
+                                                </button>
+                                            </form>
+                                        <?php endif; ?>
+                                    </td>
                                 </tr>
                             <?php endforeach; ?>
                         </tbody>

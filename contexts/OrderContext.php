@@ -84,6 +84,14 @@ class OrderContext extends AppContext
         );
     }
 
+    public function reassignMechanic(int $orderId, int $newMechanicId): int
+    {
+        return $this->affectedExecute(
+            "UPDATE orders SET mechanic_id = ? WHERE id = ? AND status NOT IN ('completed','cancelled')",
+            'ii', [$newMechanicId, $orderId]
+        );
+    }
+
     public function assignMechanicToOrder(int $orderId, int $mechanicId, int $masterId): int
     {
         return $this->affectedExecute(
@@ -158,11 +166,19 @@ class OrderContext extends AppContext
         );
     }
 
-    public function getOrdersByMechanic(int $mechanicId): array
+    public function getOrdersByMechanic(int $mechanicId, bool $archived = false): array
     {
+        $statusFilter = $archived
+            ? "o.status IN ('completed','cancelled')"
+            : "o.status NOT IN ('completed','cancelled')";
+
+        $orderBy = $archived
+            ? "o.end_date DESC, o.id DESC"
+            : "FIELD(o.status,'in_progress','waiting_parts','assigned','new'), o.id DESC";
+
         return $this->fetchAll(
-            "SELECT o.id, o.status, o.description, o.start_date, o.end_date,
-                    o.total_price, o.created_at,
+            "SELECT o.id, o.status, o.description, o.parts_comment,
+                    o.start_date, o.end_date, o.total_price, o.created_at,
                     c.brand, c.model, c.gosnumber,
                     u.full_name AS client_name,
                     (SELECT ma.comment FROM mechanic_assignments ma
@@ -170,13 +186,80 @@ class OrderContext extends AppContext
                      ORDER BY ma.id DESC LIMIT 1) AS master_comment,
                     (SELECT GROUP_CONCAT(CONCAT(s.name,' \xc3\x97 ',os.quantity) ORDER BY s.name SEPARATOR ' \xc2\xb7 ')
                      FROM order_services os JOIN services s ON s.id = os.service_id
-                     WHERE os.order_id = o.id) AS services_summary
+                     WHERE os.order_id = o.id) AS services_summary,
+                    (SELECT GROUP_CONCAT(CONCAT(p.name,' \xc3\x97 ',op.quantity) ORDER BY p.name SEPARATOR ' \xc2\xb7 ')
+                     FROM order_parts op JOIN parts p ON p.id = op.part_id
+                     WHERE op.order_id = o.id) AS parts_summary
              FROM orders o
              JOIN cars c ON c.id = o.car_id
              JOIN users u ON u.id = o.client_id
-             WHERE o.mechanic_id = ?
-             ORDER BY FIELD(o.status,'in_progress','waiting_parts','assigned','new','completed','cancelled'), o.id DESC",
+             WHERE o.mechanic_id = ? AND {$statusFilter}
+             ORDER BY {$orderBy}",
             'i', [$mechanicId]
+        );
+    }
+
+    public function getServicesForClientOrders(int $clientId): array
+    {
+        return $this->fetchAll(
+            "SELECT os.order_id, os.quantity, os.comment,
+                    s.name, s.price
+             FROM order_services os
+             JOIN services s ON s.id = os.service_id
+             JOIN orders   o ON o.id = os.order_id
+             WHERE o.client_id = ?
+             ORDER BY os.order_id ASC, s.name ASC",
+            'i', [$clientId]
+        );
+    }
+
+    public function getPartsForClientOrders(int $clientId): array
+    {
+        return $this->fetchAll(
+            "SELECT op.order_id, op.quantity, op.note,
+                    p.name, p.article, p.price
+             FROM order_parts op
+             JOIN parts  p ON p.id = op.part_id
+             JOIN orders o ON o.id = op.order_id
+             WHERE o.client_id = ?
+             ORDER BY op.order_id ASC, p.name ASC",
+            'i', [$clientId]
+        );
+    }
+
+    public function getPartsForOrder(int $orderId): array
+    {
+        return $this->fetchAll(
+            "SELECT op.id, op.quantity, op.note, p.name, p.article, p.price
+             FROM order_parts op
+             JOIN parts p ON p.id = op.part_id
+             WHERE op.order_id = ?
+             ORDER BY p.name ASC",
+            'i', [$orderId]
+        );
+    }
+
+    public function addPart(int $orderId, int $partId, int $quantity, string $note): int
+    {
+        return $this->insert(
+            "INSERT INTO order_parts (order_id, part_id, quantity, note) VALUES (?, ?, ?, ?)",
+            'iiis', [$orderId, $partId, $quantity, $note]
+        );
+    }
+
+    public function removePart(int $rowId, int $orderId): bool
+    {
+        return $this->execute(
+            "DELETE FROM order_parts WHERE id = ? AND order_id = ?",
+            'ii', [$rowId, $orderId]
+        );
+    }
+
+    public function updatePartsComment(int $orderId, string $comment): void
+    {
+        $this->execute(
+            "UPDATE orders SET parts_comment = ? WHERE id = ?",
+            'si', [$comment, $orderId]
         );
     }
 
@@ -185,6 +268,7 @@ class OrderContext extends AppContext
         return $this->fetchAll(
             "SELECT o.id, o.car_id, o.status, o.total_price,
                     o.start_date, o.end_date, o.description, o.created_at,
+                    o.cancel_comment,
                     c.brand, c.model, c.gosnumber,
                     u_m.full_name  AS mechanic_name,
                     u_ms.full_name AS master_name
@@ -195,6 +279,14 @@ class OrderContext extends AppContext
              WHERE o.client_id = ?
              ORDER BY o.id DESC",
             'i', [$clientId]
+        );
+    }
+
+    public function cancelByMaster(int $orderId, int $masterId, string $comment): int
+    {
+        return $this->affectedExecute(
+            "UPDATE orders SET status = 'cancelled', cancel_comment = ? WHERE id = ? AND master_id = ? AND status = 'new'",
+            'sii', [$comment, $orderId, $masterId]
         );
     }
 

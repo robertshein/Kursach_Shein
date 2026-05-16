@@ -1,7 +1,7 @@
 <?php
 require_once __DIR__ . '/BaseController.php';
 require_once __DIR__ . '/../models/User.php';
-require_once __DIR__ . '/../models/SalaryRecord.php';
+require_once __DIR__ . '/../models/Order.php';
 require_once __DIR__ . '/../models/PartPurchaseRequest.php';
 
 class AdminController extends BaseController
@@ -20,7 +20,7 @@ class AdminController extends BaseController
         return $this->ok(['clients' => $this->users()->getClients()]);
     }
 
-    public function createEmployee(string $fullName, string $phone, string $email, string $password, string $role, float $salary): array
+    public function createEmployee(string $fullName, string $phone, string $email, string $password, string $role): array
     {
         $check = $this->requireRole([User::ROLE_ADMIN]);
         if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
@@ -28,19 +28,19 @@ class AdminController extends BaseController
         if (!in_array($role, [User::ROLE_MECHANIC, User::ROLE_MASTER, User::ROLE_ADMIN], true)) return $this->fail('Некорректная роль сотрудника');
         if ($this->users()->emailExists($email)) return $this->fail('Пользователь с таким email уже существует');
 
-        $id = $this->users()->create($fullName, $phone, $email, $role, password_hash($password, PASSWORD_BCRYPT), $salary);
+        $id = $this->users()->create($fullName, $phone, $email, $role, password_hash($password, PASSWORD_BCRYPT));
         if (!$id) return $this->fail('Не удалось добавить сотрудника', 500);
         return $this->ok(['employee_id' => $id, 'message' => 'Сотрудник добавлен']);
     }
 
-    public function updateEmployee(int $employeeId, string $fullName, string $phone, string $email, string $role, float $salary): array
+    public function updateEmployee(int $employeeId, string $fullName, string $phone, string $email, string $role): array
     {
         $check = $this->requireRole([User::ROLE_ADMIN]);
         if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
 
         if (!in_array($role, [User::ROLE_MECHANIC, User::ROLE_MASTER, User::ROLE_ADMIN], true)) return $this->fail('Некорректная роль сотрудника');
         if ($this->users()->emailExists($email, $employeeId)) return $this->fail('Пользователь с таким email уже существует');
-        if (!$this->users()->update($employeeId, $fullName, $phone, $email, $role, $salary)) return $this->fail('Не удалось обновить данные сотрудника', 500);
+        if (!$this->users()->update($employeeId, $fullName, $phone, $email, $role)) return $this->fail('Не удалось обновить данные сотрудника', 500);
         return $this->ok(['message' => 'Данные сотрудника обновлены']);
     }
 
@@ -50,14 +50,6 @@ class AdminController extends BaseController
         if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
         if (!$this->users()->setActive($employeeId, $isActive)) return $this->fail('Не удалось изменить статус сотрудника', 500);
         return $this->ok(['message' => 'Статус сотрудника обновлён']);
-    }
-
-    public function setSalary(int $employeeId, float $salary): array
-    {
-        $check = $this->requireRole([User::ROLE_ADMIN]);
-        if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
-        if (!$this->users()->setSalary($employeeId, $salary)) return $this->fail('Не удалось установить зарплату', 500);
-        return $this->ok(['message' => 'Зарплата обновлена']);
     }
 
     public function getAllPurchaseRequests(): array
@@ -77,88 +69,110 @@ class AdminController extends BaseController
         return $this->ok(['message' => 'Запрос на закупку обработан']);
     }
 
-    public function getSalaryRecords(): array
+    public function getAllOrders(): array
     {
         $check = $this->requireRole([User::ROLE_ADMIN]);
         if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
-        return $this->ok(['records' => $this->salary()->getAll()]);
+        return $this->ok(['orders' => $this->orders()->getAllOrders()]);
     }
 
-    public function getSalaryByPeriods(): array
+    public function forceOrderStatus(int $orderId, string $newStatus): array
     {
         $check = $this->requireRole([User::ROLE_ADMIN]);
         if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
-        return $this->ok($this->salary()->getByPeriods());
+        if (!Order::isValidStatus($newStatus)) return $this->fail('Недопустимый статус');
+        $order = $this->orders()->findById($orderId);
+        if (!$order) return $this->fail('Заявка не найдена', 404);
+        if ($order['status'] === $newStatus) return $this->fail('Заявка уже имеет этот статус');
+        $this->orders()->updateStatus($orderId, $newStatus);
+        $this->history()->log($orderId, $order['status'], $newStatus, $this->currentUserId());
+        return $this->ok(['message' => 'Статус заявки изменён']);
     }
 
-    public function getSalaryStats(): array
+    public function getServices(): array
     {
         $check = $this->requireRole([User::ROLE_ADMIN]);
         if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
-        return $this->ok(['stats' => $this->salary()->getStats()]);
+        return $this->ok(['services' => $this->services()->getAll()]);
     }
 
-    public function createSalaryRecord(int $employeeId, float $amount, string $periodStart, string $periodEnd, int $adminId, ?string $comment = null): array
+    public function createService(string $name, float $price): array
     {
         $check = $this->requireRole([User::ROLE_ADMIN]);
         if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
-
-        $id = $this->salary()->create($employeeId, $amount, $periodStart, $periodEnd, $adminId, (string) ($comment ?? ''));
-        if (!$id) return $this->fail('Не удалось создать запись по зарплате', 500);
-        return $this->ok(['salary_record_id' => $id, 'message' => 'Запись по зарплате создана']);
+        if ($name === '') return $this->fail('Укажите название услуги');
+        if ($price < 0) return $this->fail('Цена не может быть отрицательной');
+        if ($this->services()->nameExists($name)) return $this->fail('Услуга с таким названием уже существует');
+        $id = $this->services()->create($name, $price);
+        if (!$id) return $this->fail('Не удалось создать услугу', 500);
+        return $this->ok(['service_id' => $id, 'message' => 'Услуга добавлена']);
     }
 
-    public function setSalaryRecordStatus(int $salaryRecordId, string $newStatus): array
+    public function updateService(int $id, string $name, float $price): array
     {
         $check = $this->requireRole([User::ROLE_ADMIN]);
         if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
-
-        if (!in_array($newStatus, SalaryRecord::getAvailableStatuses(), true)) return $this->fail('Недопустимый статус зарплатной записи');
-        if (!$this->salary()->setStatus($salaryRecordId, $newStatus)) return $this->fail('Не удалось обновить статус зарплатной записи', 500);
-        return $this->ok(['message' => 'Статус зарплатной записи обновлён']);
+        if ($name === '') return $this->fail('Укажите название услуги');
+        if ($price < 0) return $this->fail('Цена не может быть отрицательной');
+        if (!$this->services()->exists($id)) return $this->fail('Услуга не найдена', 404);
+        if ($this->services()->nameExists($name, $id)) return $this->fail('Услуга с таким названием уже существует');
+        if (!$this->services()->update($id, $name, $price)) return $this->fail('Не удалось обновить услугу', 500);
+        return $this->ok(['message' => 'Услуга обновлена']);
     }
 
-    public function generatePayroll(string $periodStart, string $periodEnd, int $adminId): array
+    public function deleteService(int $id): array
     {
         $check = $this->requireRole([User::ROLE_ADMIN]);
         if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
-
-        if ($periodStart > $periodEnd) return $this->fail('Дата начала периода не может быть позже даты окончания');
-
-        $employees = $this->users()->getActiveEmployeesWithSalary();
-        if (empty($employees)) return $this->fail('Нет активных сотрудников с установленным окладом');
-
-        $existingIds = array_map('intval', $this->salary()->getExistingEmployeeIds($periodStart, $periodEnd));
-        $created = 0;
-        $skipped = 0;
-
-        mysqli_begin_transaction($this->db);
-        foreach ($employees as $emp) {
-            $eid = (int) $emp['id'];
-            if (in_array($eid, $existingIds, true)) { $skipped++; continue; }
-            $comment = 'Оклад за период ' . $periodStart . ' — ' . $periodEnd;
-            $id = $this->salary()->create($eid, (float) $emp['salary'], $periodStart, $periodEnd, $adminId, $comment);
-            if (!$id) {
-                mysqli_rollback($this->db);
-                return $this->fail('Ошибка при создании записи для сотрудника ' . htmlspecialchars($emp['full_name']), 500);
-            }
-            $created++;
-        }
-        mysqli_commit($this->db);
-
-        return $this->ok(['created' => $created, 'skipped' => $skipped, 'message' => "Ведомость сформирована: создано {$created}, пропущено {$skipped}."]);
+        if (!$this->services()->exists($id)) return $this->fail('Услуга не найдена', 404);
+        if ($this->services()->isUsedInOrders($id)) return $this->fail('Нельзя удалить услугу: она используется в заявках');
+        if (!$this->services()->delete($id)) return $this->fail('Не удалось удалить услугу', 500);
+        return $this->ok(['message' => 'Услуга удалена']);
     }
 
-    public function bulkSetSalaryStatus(string $periodStart, string $periodEnd, string $fromStatus, string $toStatus): array
+    public function getParts(): array
     {
         $check = $this->requireRole([User::ROLE_ADMIN]);
         if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
+        return $this->ok(['parts' => $this->parts()->getAll()]);
+    }
 
-        $allowed = SalaryRecord::getAvailableStatuses();
-        if (!in_array($fromStatus, $allowed, true) || !in_array($toStatus, $allowed, true)) return $this->fail('Некорректный статус');
+    public function createPart(string $name, string $article, int $quantity, float $price): array
+    {
+        $check = $this->requireRole([User::ROLE_ADMIN]);
+        if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
+        if ($name === '') return $this->fail('Укажите название запчасти');
+        if ($article === '') return $this->fail('Укажите артикул');
+        if ($quantity < 0) return $this->fail('Количество не может быть отрицательным');
+        if ($price < 0) return $this->fail('Цена не может быть отрицательной');
+        if ($this->parts()->articleExists($article)) return $this->fail('Запчасть с таким артикулом уже существует');
+        $id = $this->parts()->create($name, $article, $quantity, $price);
+        if (!$id) return $this->fail('Не удалось создать запчасть', 500);
+        return $this->ok(['part_id' => $id, 'message' => 'Запчасть добавлена']);
+    }
 
-        $affected = $this->salary()->bulkSetStatus($periodStart, $periodEnd, $fromStatus, $toStatus);
-        return $this->ok(['affected' => $affected, 'message' => "Обновлено записей: {$affected}."]);
+    public function updatePart(int $id, string $name, string $article, int $quantity, float $price): array
+    {
+        $check = $this->requireRole([User::ROLE_ADMIN]);
+        if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
+        if ($name === '') return $this->fail('Укажите название запчасти');
+        if ($article === '') return $this->fail('Укажите артикул');
+        if ($quantity < 0) return $this->fail('Количество не может быть отрицательным');
+        if ($price < 0) return $this->fail('Цена не может быть отрицательной');
+        if (!$this->parts()->exists($id)) return $this->fail('Запчасть не найдена', 404);
+        if ($this->parts()->articleExists($article, $id)) return $this->fail('Запчасть с таким артикулом уже существует');
+        if (!$this->parts()->update($id, $name, $article, $quantity, $price)) return $this->fail('Не удалось обновить запчасть', 500);
+        return $this->ok(['message' => 'Запчасть обновлена']);
+    }
+
+    public function deletePart(int $id): array
+    {
+        $check = $this->requireRole([User::ROLE_ADMIN]);
+        if (!$check[0]) return $this->fail($check[1]['message'], $check[1]['status']);
+        if (!$this->parts()->exists($id)) return $this->fail('Запчасть не найдена', 404);
+        if ($this->parts()->isUsedInRequests($id)) return $this->fail('Нельзя удалить запчасть: она фигурирует в запросах на закупку');
+        if (!$this->parts()->delete($id)) return $this->fail('Не удалось удалить запчасть', 500);
+        return $this->ok(['message' => 'Запчасть удалена']);
     }
 
     public function getDashboardStats(): array
@@ -173,7 +187,6 @@ class AdminController extends BaseController
             'active_employees'  => 0,
             'total_clients'     => 0,
             'pending_purchases' => $this->purchases()->countPending(),
-            'salary_drafts'     => $this->salary()->countDrafts(),
         ];
 
         $res = mysqli_query($this->db, "SELECT COUNT(*) AS c FROM users WHERE role = 'client'");

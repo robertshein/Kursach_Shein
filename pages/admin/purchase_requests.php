@@ -91,7 +91,7 @@ $resolved = array_filter($requests, fn($req) => ($req['status'] ?? '') !== PartP
         <?php endif; ?>
 
         <h1 class="sans">Запросы на закупку запчастей</h1>
-        <p class="lead">Одобряйте или отклоняйте запросы мастеров на покупку запчастей для заявок.</p>
+        <p class="lead">Одобряйте или отклоняйте запросы мастеров и механиков на покупку запчастей для заявок.</p>
 
         <!-- Ожидающие решения -->
         <section class="card">
@@ -108,8 +108,8 @@ $resolved = array_filter($requests, fn($req) => ($req['status'] ?? '') !== PartP
                                 <th>Запчасть</th>
                                 <th>Цена</th>
                                 <th>Кол-во</th>
-                                <th>Мастер</th>
-                                <th>Комментарий мастера</th>
+                                <th>Запросил</th>
+                                <th>Комментарий</th>
                                 <th>Создан</th>
                                 <th>Решение</th>
                             </tr>
@@ -135,7 +135,12 @@ $resolved = array_filter($requests, fn($req) => ($req['status'] ?? '') !== PartP
                                     </td>
                                     <td><?php echo $price; ?></td>
                                     <td><?php echo $qty; ?> шт.<br><span class="hint">= <?php echo $total; ?></span></td>
-                                    <td><?php echo htmlspecialchars($req['requested_by_master'] ?? ''); ?></td>
+                                    <td>
+                                        <?php echo htmlspecialchars($req['requester_name'] ?? ''); ?>
+                                        <?php if (($req['requester_role'] ?? '') === 'mechanic'): ?>
+                                            <span class="hint"> (механик)</span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td><span class="hint"><?php echo htmlspecialchars((string) ($req['comment'] ?? '—')); ?></span></td>
                                     <td><span class="hint"><?php echo htmlspecialchars((string) ($req['created_at'] ?? '')); ?></span></td>
                                     <td>
@@ -171,7 +176,7 @@ $resolved = array_filter($requests, fn($req) => ($req['status'] ?? '') !== PartP
                                 <th>Запчасть</th>
                                 <th>Кол-во</th>
                                 <th>Статус</th>
-                                <th>Мастер</th>
+                                <th>Запросил</th>
                                 <th>Решил</th>
                                 <th>Решено</th>
                             </tr>
@@ -191,7 +196,12 @@ $resolved = array_filter($requests, fn($req) => ($req['status'] ?? '') !== PartP
                                     </td>
                                     <td><?php echo (int) ($req['quantity'] ?? 0); ?></td>
                                     <td><span class="<?php echo $badge; ?>"><?php echo htmlspecialchars($STATUS_LABELS[$st] ?? $st); ?></span></td>
-                                    <td><?php echo htmlspecialchars($req['requested_by_master'] ?? ''); ?></td>
+                                    <td>
+                                        <?php echo htmlspecialchars($req['requester_name'] ?? ''); ?>
+                                        <?php if (($req['requester_role'] ?? '') === 'mechanic'): ?>
+                                            <span class="hint"> (механик)</span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td><?php echo htmlspecialchars((string) ($req['approved_by_admin'] ?? '—')); ?></td>
                                     <td><span class="hint"><?php echo htmlspecialchars((string) ($req['resolved_at'] ?? '—')); ?></span></td>
                                 </tr>
